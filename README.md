@@ -26,7 +26,33 @@
 - **大屏**：`SentinelDashboard/`（Vite + Vue 3、Pinia、DataV、ECharts）；接口不可用时可读离线 **JSONL**。  
 - **本地一键**：根目录 **`python start.py`** 可同时起 API、Streamlit、可选前端 dev。
 
-**可选配图**（不占「技术要点」正文篇幅，按需放入 **`docs/assets/`**）：架构图 **`architecture.png`**（类型：**系统架构图**）、全流程 **`pipeline-flow.png`**（类型：**流程图**）、大屏 **`dashboard-demo.gif`**（类型：**演示 GIF**）、Streamlit **`streamlit-webui.png`**（类型：**界面截图**）。
+## 🏗️ 系统架构 (System Architecture)
+
+<div align="center">
+  <img src="SentinelDashboard/public/System_Architecture_Diagram.png" width="800" alt="RxSentinel System Architecture">
+  <p><em>RxSentinel 全栈情报处理管线架构图</em></p>
+</div>
+
+---
+
+## 🖥️ 演示与交互 (Demo & Interface)
+
+<div align="center">
+  <table border="0">
+    <tr>
+      <td align="center" width="50%">
+        <strong>Vue3 数据大屏演示</strong><br>
+        <img src="docs/assets/dashboard-demo.gif" width="100%" alt="Dashboard Demo GIF">
+        <br><em>(实时情报分页聚合展示)</em>
+      </td>
+      <td align="center" width="50%">
+        <strong>Streamlit 控制台</strong><br>
+        <img src="docs/assets/streamlit-webui.png" width="100%" alt="Streamlit WebUI">
+        <br><em>(管线参数配置与脚本调度)</em>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 
