@@ -29,7 +29,7 @@
 ## 🏗️ 系统架构 (System Architecture)
 
 <div align="center">
-  <img src="SentinelDashboard/public/System_Architecture_Diagram.png" width="800" alt="RxSentinel System Architecture">
+  <img src="SentinelDashboard/public/System_Architecture_Diagram.png" width="400" alt="RxSentinel System Architecture">
   <p><em>RxSentinel 全栈情报处理管线架构图</em></p>
 </div>
 
