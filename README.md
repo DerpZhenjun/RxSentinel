@@ -1,7 +1,7 @@
 # 🔭 RxSentinel — 处方类灰产情报管线
 
 <div align="center">
-  <img src="SentinelDashboard/public/logo-rxsentinel.png" width="120" alt="RxSentinel Logo">
+  <img src="SentinelDashboard/public/logo-rxsentinel.png" width="240" alt="RxSentinel Logo">
 
   # RxSentinel — 处方类灰产情报管线
 
