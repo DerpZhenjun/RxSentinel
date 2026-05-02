@@ -146,27 +146,6 @@ cd SentinelDashboard && npm install && npm run dev
 
 ---
 
-## 🗺️ 路线图
-
-- [ ] 根目录补充 **`LICENSE`**（当前仅 **`MediaCrawler/`** 自带许可文件）。  
-- [ ] 可选：**Docker Compose**（Mongo / API / 前端产物；仓库内暂无 Dockerfile）。  
-- [ ] 按需接入 **pytest + Vitest** CI。
-
----
-
-## 许可证
-
-仓库 **根目录当前未包含** `LICENSE`。使用 **`MediaCrawler/`** 时请遵守该子目录许可与 **[原项目说明](https://github.com/NanmiCoder/MediaCrawler)**。
-
----
-
-## Logo 绘图提示词（可选）
-
-> Minimalist flat vector logo, name "RxSentinel", dark navy background, thin cyan grid lines, shield or radar glyph merged with medical cross hint, high contrast, no decorative text, square 1024×1024, GitHub README friendly.  
-> 科技感指挥中心、深蓝 / 青色、扁平矢量、留白足、不要写实照片。
-
----
-
 ## 免责声明
 
 本项目仅供学习与交流；爬虫与数据处理须遵守法律法规及平台协议。RxSentinel 使用了 **[NanmiCoder / MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** 的实现思路与代码 subtree，**再次感谢原作者的开源贡献**；**关于爬虫、版权声明与免责声明的完整内容，请以 MediaCrawler 官方仓库文档为准并由使用者自行承担相应责任**。
