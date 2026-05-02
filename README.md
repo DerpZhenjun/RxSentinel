@@ -12,14 +12,6 @@
 
 ---
 
-## Logo
-
-![RxSentinel Logo](docs/assets/logo-placeholder.png)
-
-**文件名建议**：`docs/assets/logo-rxsentinel.png` · **类型**：Logo / 矢量品牌图 · 深蓝 + 青色、扁平指挥中心风格均可；占位图可先放在 **`docs/assets/`**。
-
----
-
 ## 📖 项目简介
 
 先把 **爬虫或手工导入的评论、文本** 做 **词库和语境过滤**，再用 **大模型整理成一条条结构化线索**，由后端按固定字段写入 **MongoDB**（同一条内容用 **`fingerprint`** 识别，重复跑管线会覆盖同一记录而不是堆重复数据），最后用 **Vue 大屏** 调接口分页查看；也可用 **Streamlit** 网页改参数并启动各阶段脚本。
