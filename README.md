@@ -10,13 +10,12 @@
 
 感谢 **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** 开源项目：`RxSentinel` 内置的 **`MediaCrawler/`** 爬虫子模块来源于此。**请务必同时阅读并遵守该仓库自带的免责声明与用户义务**，使用前以原项目文档为准。
 
----
+
 
 ## 📖 项目简介
 
 **RxSentinel** 是一套从爬虫或导入的评论文本出发，经规则过滤和**大模型结构化**后写入 MongoDB、再用 **Vue 数据大屏**展示的一体化管线，可通过 Streamlit 配参并联调各阶段。
 
----
 
 ## 🔧 技术要点
 
