@@ -1,0 +1,46 @@
+# =============================================================================
+# requirements.txt — RxSentinel 运行时依赖
+# =============================================================================
+#
+# 适用场景：在本机或服务器上运行完整应用（API + WebUI + AI 处理管道）
+#
+#   pip install -r requirements.txt
+#
+# 依赖层次说明：
+#
+#   requirements.txt          ← 当前文件，完整运行时依赖（本文件）
+#   requirements-test.txt     ← 仅用于 pytest / CI，是本文件的轻量子集，
+#                                故意排除 streamlit / matplotlib 等重型依赖
+#   MediaCrawler/requirements.txt ← MediaCrawler 爬虫子模块的独立依赖，
+#                                   仅在使用爬虫功能时需要单独安装：
+#                                   pip install -r MediaCrawler/requirements.txt
+#
+# 注意：pytest / pytest-cov 属于测试工具，不在本文件中，
+#       如需运行测试请安装 requirements-test.txt。
+#
+# =============================================================================
+
+# --- Web API ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+slowapi>=0.1.9
+
+# --- 数据库 ---
+pymongo>=4.0
+
+# --- 数据验证 ---
+pydantic>=2.0
+python-dotenv>=1.0
+
+# --- 数据处理 ---
+matplotlib>=3.7
+requests>=2.31
+tqdm>=4.66
+
+# --- AI 处理器 ---
+openai>=1.0          # DeepSeek API（可选，仅 deepseek_processor.py 使用）
+ollama>=0.2.0        # Ollama Python SDK（可选，辅助库）
+
+# --- WebUI ---
+streamlit>=1.32
