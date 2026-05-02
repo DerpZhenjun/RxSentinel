@@ -25,6 +25,14 @@
 - **调度**：Streamlit（`RxServer/webui.py`）配合 `webui_core.py` 起子进程。  
 - **大屏**：`SentinelDashboard/`（Vite + Vue 3、Pinia、DataV、ECharts）；接口不可用时可读离线 **JSONL**。  
 - **本地一键**：根目录 **`python start.py`** 可同时起 API、Streamlit、可选前端 dev。
+🔧 技术原理（RxSentinel，简版）
+
+核心业务路径：爬虫或导入的评论与文本，经本地词库与语境过滤后，由大模型整理为固定字段的结构化线索写入 MongoDB；以 fingerprint 关联同一条线索，管线可多次执行并在库内表现为更新而非追加重复记录。
+
+大屏与后端一体：Vue 指挥中心仅通过后端分页接口读取数据；外链是否有效由服务端 check_url 检测。读服务不可用时，可使用预置的聚合 JSONL 作为静态数据源维持展示。
+
+优势特点：采集、清洗、模型抽取、入库与可视化在同一仓库内串联为可重复执行的流水线，由 Streamlit 配置参数并通过子进程调度各阶段，减少多脚本分散维护的成本。
+
 
 ## 🏗️ 系统架构 (System Architecture)
 
