@@ -25,7 +25,11 @@ SOFTWARE.
 ### ADDITIONAL TERMS & NOTICES
 
 **1. Third-Party Code Notice:**
+
 The `MediaCrawler` module in this project includes code derived from [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler). Use, modification, and distribution of this specific module must comply with the **NON-COMMERCIAL LEARNING LICENSE 1.1** as specified by its original author.
 
 **2. Intellectual Property Rights:**
-Except for the third-party modules mentioned above, the core architecture, AI processing logic (ProcessCdata), backend API (RxServer), and dashboard (SentinelDashboard) of this project (RxSentinel) are the intellectual property of **DerpZhenjun**. All rights regarding patents, software copyrights, and inventions are reserved. Commercial application or unauthorized registration of these core components as patents or software copyrights is strictly prohibited without written consent from the author.
+
+Except for the third-party modules mentioned above, the core architecture, AI processing logic (ProcessCdata), backend API (RxServer), and dashboard (SentinelDashboard) of this project (RxSentinel) are the intellectual property of **DerpZhenjun**. 
+
+All rights regarding patents, software copyrights, and inventions are reserved. Commercial application or unauthorized registration of these core components as patents or software copyrights is strictly prohibited without written consent from the author.
