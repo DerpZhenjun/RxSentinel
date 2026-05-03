@@ -22,20 +22,108 @@ Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder
 
 ## 📖 Overview
 
-Raw comments or imported text pass through **dictionary and context filtering**, then an **LLM turns them into structured leads**. The backend checks fields against a fixed layout and writes to **MongoDB**; **`fingerprint`** identifies “the same logical lead” so re-running the pipeline updates one row instead of piling duplicates. A **Vue** dashboard pages the HTTP API for read-only viewing; **Streamlit** lets you tweak parameters and launch pipeline stages.
+**RxSentinel** is a **complete prescription gray-market intelligence pipeline system**. It starts from comment text collected via multi-platform crawlers or manual import, passes through **rule-based filtering** and **LLM-powered structured extraction**, writes results to MongoDB with automatic **deduplication** via `fingerprint`, and finally visualizes everything on a **Vue data dashboard**—all orchestrated by an interactive **Streamlit UI**.
+
+### 🎯 Core Value Proposition
+
+- **Intelligent collection**: Multi-platform crawlers (Bilibili, TikTok, Kuaishou, Weibo, Xiaohongshu, Zhihu, Tieba, etc.); also supports manual data import  
+- **Automatic deduplication**: `fingerprint` + MongoDB unique index ensures same-source records update-once, not duplicate  
+- **Structured processing**: AI transforms unstructured comments into standard fields (product, merchant, platform, sentiment, etc.)  
+- **Multi-channel queries**: HTTP API, Streamlit UI, Vue dashboard—three ways to explore the data  
+- **Flexible storage**: Support MongoDB-only, local-only, or dual-storage modes  
+- **Real-time monitoring**: Stream pipeline logs and progress in Streamlit during execution
 
 ---
 
-## 🔧 Technical notes
+## � Core Pipeline (Four Stages)
 
-- **API**: FastAPI (`RxServer/sentinel_api.py`), routes under `RxServer/routers/`, optional token auth plus slowapi rate limits.  
-- **Writes**: Pydantic checks field shapes; URLs and platform labels get normalized rules in **`RxServer/sentinel_contract.py`**, plus **`fingerprint`** for deduping inserts.  
-- **Pipeline**: optional **`MediaCrawler/`** crawl → `ProcessCdata/data_filter.py` → `deepseek_processor.py` / `ollama_processor.py` → `RxServer/pipeline_runner.py` to MongoDB or JSONL export.  
-- **Ops UI**: Streamlit (`RxServer/webui.py`) with `webui_core.py` spawning subprocesses.  
-- **Dashboard**: `SentinelDashboard/` (Vite + Vue 3, Pinia, DataV, ECharts); falls back to static **JSONL** if the API is down.  
-- **Local launcher**: **`python start.py`** for API + Streamlit + optional Vite dev.
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                     RxSentinel Data Pipeline                         │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  [1] Collect       [2] Clean       [3] AI Process     [4] Store    │
+│  ───────────────────────────────────────────────────────────   │
+│                                                                       │
+│  MediaCrawler  →  data_filter.py  →  DeepSeek/  →  MongoDB     │
+│  or import data      rule filtering     Ollama        + FastAPI     │
+│                      ✓ dedupe            ✓ structure   + Vue board    │
+│                      ✓ normalize        ✓ standard    + Streamlit    │
+│                      ✓ clean errors     ✓ biz logic   + stats        │
+│                                                                       │
+│  Stages run via subprocess.Popen streams; Streamlit shows real-time  │
+│                                                                       │
+└────────────────────────────────────────────────────────────────────┘
+```
 
-**Optional figures** under **`docs/assets/`**: **`architecture.png`** (system diagram), **`pipeline-flow.png`** (flowchart), **`dashboard-demo.gif`** (GIF demo), **`streamlit-webui.png`** (Streamlit screenshot).
+### 📍 Stage Details
+
+| Stage | Module | Function |
+|-------|--------|----------|
+| **1️⃣ Collect** | `MediaCrawler/` | Multi-platform crawler (Bilibili, TikTok, Kuaishou, Weibo, Xiaohongshu, Zhihu, Tieba); or import via API |
+| **2️⃣ Clean** | `ProcessCdata/data_filter.py` | Rule/dict filtering, deduplication, format normalization |
+| **3️⃣ AI Process** | `deepseek_processor.py` / `ollama_processor.py` | LLM extraction into standard fields via `ai_processor_common.py` |
+| **4️⃣ Store & View** | `pipeline_runner.py` + API + Vue | Dedupe via `fingerprint`, write to MongoDB; query via HTTP/UI/dashboard |
+
+---
+
+## 🔧 Technical Architecture
+
+- **API & Middleware**: **FastAPI** + **Uvicorn** (`RxServer/sentinel_api.py`)  
+  - **Index Strategy on startup** via **`lifespan`** with **PyMongo**:  
+    - **Unique index** on `fingerprint` (prevents duplicates)  
+    - **Compound indexes** on `(ingested_at, platform, merchant, source_platform)` (accelerates dashboard queries)  
+  - **Route organization** under **`RxServer/routers/`** (e.g., `health`, `leads`, `stats`)  
+  - **Authentication**: If **`API_SECRET_KEY`** is set, checks byte-exact **`Authorization: Bearer …`** header; empty = dev mode (no auth)  
+  - **Rate limiting**: **slowapi** limits by client IP to prevent abuse  
+  - **CORS policy**: **CORSMiddleware** whitelists common local **Vite** origins for front-end dev
+
+- **Read API & URL Verification**: **`routers/leads.py`** provides three services  
+  - **Paged queries**: Filter, sort, and paginate results; aggregate by platform, merchant, date range  
+  - **Aggregated stats** (`/stats` endpoint): Summary data (platform distribution, merchant rankings, temporal trends)  
+  - **Link verification** (`check_url`): Server-side HTTP proxy with **TTL in-memory cache** (avoids CORS in browser, detects soft 404s via HTML sniffing)  
+  - **Legacy doc upgrade**: On list reads, can trigger **`upgrade_existing_doc`** to back-fill missing fields in old docs and write them back (unordered bulk operation)  
+  - **Type-safe responses**: All list/paginate structures use **Pydantic** models for schema safety
+
+- **Write Path & Deduplication**: **`sentinel_contract.py`** normalizes data for MongoDB writes  
+  - **Field validation**: **Pydantic `LeadContract`** ensures required fields, enforces data types  
+  - **URL normalization**: Maps Bilibili BV/av/dynamics, generic URLs, etc. to a standard format  
+  - **Platform aliasing**: Unifies platform display names to canonical identifiers  
+  - **Fingerprint generation**: Builds stable `fingerprint` from `(source_url, platform, merchant)` to uniquely identify logical leads  
+  - **Dedupe on write**: **`pipeline_runner.py`** calls **`to_contract_doc`** for normalization, then **PyMongo `UpdateOne`** combined with **unique index** ensures: **same-source records update one row**, not pile duplicates
+
+- **Pipeline Orchestration Engine**: **`pipeline_runner.py`** unifies four stages  
+  - **Stage chaining**: Collect → Clean → AI Process → Write/Export  
+  - **Stream log capture**: Each stage runs as **`subprocess.Popen`**, **`pipeline_runner.py`** real-time fetches and buffers stdout/stderr, relays to Streamlit for live progress  
+  - **Unified AI interface**: **`ai_processor_common.py`** provides  
+    - **Shared prompt templates** for LLM structuring  
+    - Support for **DeepSeek** (OpenAI-compatible API)  
+    - Support for **Ollama** (local model inference)  
+  - **Optional visualization**: Can generate charts with **matplotlib** and save them  
+  - **Storage strategy** via **`STORAGE_OPTIONS`** / **`READ_OPTIONS`**:  
+    - MongoDB only  
+    - Local JSON/JSONL only  
+    - Both simultaneously
+
+- **Ops UI (Streamlit)**: **`RxServer/webui.py`** + **`webui_core.py`** work together  
+  - **Config panel**: Streamlit forms for user to set crawler params, filter rules, AI model settings; assembles into **`PipelineConfig`**  
+  - **Real-time monitoring**: Logs, progress bars, error alerts injected into **`PipelineRunner.run_full_pipeline()`** execution  
+  - **Helper utilities**: **`webui_core.py`** encapsulates subprocess management, MongoDB sync, config validation, etc.
+
+- **Vue Dashboard (Frontend)**: **Vue 3 + Vite + Pinia + @kjgl77/datav-vue3 + ECharts + axios** (see `SentinelDashboard/package.json`)  
+  - **High-fidelity ops board**: DataV component library creates TV-screen-style dashboards; ECharts renders live charts  
+  - **State management**: Pinia centralizes app state for real-time reactivity  
+  - **Link liveness**: Calls backend **check_url** to verify external URLs; avoids browser CORS pain  
+  - **Graceful fallback**: If API is down, auto-reads local bundled **JSONL** for basic dashboard display
+
+- **Unified Launcher**: Root **`python start.py`** brings up the full stack  
+  - **Background subprocess**: Spawns **FastAPI** (`sentinel_api.py`) in subprocess  
+  - **Optional frontend**: Can optionally spawn **`npm run dev`** for Vite dev server  
+  - **Blocking UI**: Starts **Streamlit** (`webui.py`) in foreground (blocks terminal)  
+  - **API logs**: Captured to **`sentinel_api.log`** at repo root  
+  - **Custom startup modes**: Supports `--api-only`, `--no-frontend` flags (see `--help`)
+
+**Optional assets** in **`docs/assets/`**: **`architecture.png`**, **`pipeline-flow.png`**, **`dashboard-demo.gif`**, **`streamlit-webui.png`**.
 
 ---
 
