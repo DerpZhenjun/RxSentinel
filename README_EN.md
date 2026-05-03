@@ -26,28 +26,27 @@ Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder
 
 ### 🎯 Core Value Proposition
 
-- **Intelligent collection**: Multi-platform crawlers (Bilibili, TikTok, Kuaishou, Weibo, Xiaohongshu, Zhihu, Tieba, etc.); also supports manual data import  
-- **Automatic deduplication**: `fingerprint` + MongoDB unique index ensures same-source records update-once, not duplicate  
-- **Structured processing**: AI transforms unstructured comments into standard fields (product, merchant, platform, sentiment, etc.)  
-- **Multi-channel queries**: HTTP API, Streamlit UI, Vue dashboard—three ways to explore the data  
-- **Flexible storage**: Support MongoDB-only, local-only, or dual-storage modes  
-- **Real-time monitoring**: Stream pipeline logs and progress in Streamlit during execution
+- **End-to-end automation**: Complete pipeline from data collection to structured storage, one-click execution
+- **Smart deduplication**: Fingerprint-based identification ensures same-source data updates without duplication
+- **Multi-platform real-time display**: API, Web UI, and dashboard sync with real-time monitoring
 
 ---
 
-## � Core Pipeline (Four Stages)
+## 🔄 Core Pipeline (Four Stages)
 
+```mermaid
+graph LR
+    A[Collect<br/>MediaCrawler/Import] --> B[Clean<br/>Rule Filtering]
+    B --> C[AI Process<br/>DeepSeek/Ollama]
+    C --> D[Store & Display<br/>MongoDB + API + Dashboard]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│                     RxSentinel Data Pipeline                         │
-├────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  [1] Collect       [2] Clean       [3] AI Process     [4] Store    │
-│  ───────────────────────────────────────────────────────────   │
-│                                                                       │
-│  MediaCrawler  →  data_filter.py  →  DeepSeek/  →  MongoDB     │
-│  or import data      rule filtering     Ollama        + FastAPI     │
-│                      ✓ dedupe            ✓ structure   + Vue board    │
+
+### 📍 Stage Details
 │                      ✓ normalize        ✓ standard    + Streamlit    │
 │                      ✓ clean errors     ✓ biz logic   + stats        │
 │                                                                       │
@@ -127,18 +126,16 @@ Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder
 
 ---
 
-## ✨ What this repo provides
+## ✨ Capabilities Overview
 
-RxSentinel features below—**not** MediaCrawler’s full platform matrix—see **`MediaCrawler/README.md`** for crawler details.
-
-| Area | Notes |
-|------|--------|
-| Pipeline | Optional `MediaCrawler/` → `data_filter.py` → DeepSeek / Ollama processors → `pipeline_runner.py` |
-| Field checks & dedupe | `sentinel_contract.py` validates/normalizes payloads; **`fingerprint`** Mongo key avoids duplicate docs; reads can retrofit older rows to the latest layout |
-| HTTP API | Leads listing, `/stats`, `check_url`, optional Bearer, slowapi |
-| Ops UI | `webui.py` + `webui_core.py` (Streamlit) |
-| Dashboard | DataV / ECharts; JSONL fallback |
-| Launcher | `start.py` |
+| Capability | Description |
+|------------|-------------|
+| **Data Collection** | Multi-platform crawler support with manual data import option |
+| **Smart Cleaning** | Rule-based filtering of invalid content with automatic data formatting |
+| **AI Structuring** | Large language models convert text into standardized structured fields |
+| **Deduplication Storage** | Fingerprint recognition prevents duplicates with flexible storage options |
+| **Multi-platform Query** | HTTP API, Streamlit interface, and Vue dashboard for data access |
+| **Real-time Monitoring** | Streamlit interface shows pipeline execution status and logs in real-time |
 
 ---
 
