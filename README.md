@@ -10,7 +10,7 @@
 
 感谢 **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** 开源项目：`RxSentinel` 内置的 **`MediaCrawler/`** 爬虫子模块来源于此。**请务必同时阅读并遵守该仓库自带的免责声明与用户义务**，使用前以原项目文档为准。
 
-
+---
 
 ## 📖 项目简介
 
@@ -60,60 +60,14 @@
 
 ## �🔧 技术要点
 
-- **API 与中间件**：**FastAPI** + **Uvicorn**（`RxServer/sentinel_api.py`）
-  - 启动时 **`lifespan`** 中用 **PyMongo** 对 `sentinel_leads` 集合建立：
-    - **唯一索引**：`fingerprint`（避免重复插入）
-    - **组合索引**：`(ingested_at, platform, merchant, source_platform)` 等（加速大屏排序筛选）
-  - 路由统一管理在 **`RxServer/routers/`**（如 `health`、`leads`、`stats`）
-  - **认证**：`API_SECRET_KEY` 非空则校验 `Authorization: Bearer …` 完整字符串；空值则本机开发默认放行
-  - **限流**：**slowapi** 按访问 IP 限流，防止单点滥用
-  - **跨域**：**CORSMiddleware** 放行常见本地 **Vite** 端口，便于前后端分离调试
+- **后端**：FastAPI（`RxServer/sentinel_api.py`）、路由在 `RxServer/routers/`，可选用 Token 保护与 slowapi 限流。  
+- **数据入库**：通过 Pydantic 检查字段是否符合约定；链接、平台写法会统一格式化； **`RxServer/sentinel_contract.py`** 负责这一套规则与 **`fingerprint`**。  
+- **管线**：可选爬取 **`MediaCrawler/`** → `ProcessCdata/data_filter.py` 清洗 → `deepseek_processor.py` / `ollama_processor.py` 用大模型抽取 → `RxServer/pipeline_runner.py` 合并写库或导出 JSONL。  
+- **调度**：Streamlit（`RxServer/webui.py`）配合 `webui_core.py` 起子进程。  
+- **大屏**：`SentinelDashboard/`（Vite + Vue 3、Pinia、DataV、ECharts）；接口不可用时可读离线 **JSONL**。  
+- **本地一键**：根目录 **`python start.py`** 可同时起 API、Streamlit、可选前端 dev。
 
-- **读接口与探链**：**`routers/leads.py`** 提供三类服务
-  - **分页查询**：支持过滤、排序、分页；可按平台、商家、日期范围聚合
-  - **聚合统计**：**`/stats`** 端点返回汇总数据（平台分布、商家排名、时间趋势等）
-  - **链接验证**：**`check_url`** 代理端做 HTTP 请求（绕开浏览器 CORS），带 **TTL 内存缓存**；对 B 站等用短读 HTML 片段识别「软 404」
-  - **字段补全**：读库列表时可触发 **`upgrade_existing_doc`**，把旧文档缺失字段补成当前版本后写回（无序 bulk 操作）
-  - **响应格式**：所有列表与分页结构用 **Pydantic** 模型描述，确保类型安全
-
-- **写路径与去重**：**`sentinel_contract.py`** 实现核心数据规范化
-  - **字段校验**：**Pydantic `LeadContract`** 确保入库数据格式统一、必填字段完整
-  - **URL 归一化**：将 B 站 BV/av/动态链接、通用 HTTP 等多种形式统一为标准格式
-  - **平台别名处理**：映射各平台显示名到规范标识符
-  - **指纹生成**：根据 `source_url`、`platform`、`merchant` 等字段生成稳定的 **`fingerprint`**
-  - **去重写入**：**`pipeline_runner.py`** 调用 **`to_contract_doc`** 转换后，**PyMongo `UpdateOne`** 结合集合上 **唯一索引**保证：同源记录反复跑管线时 **仅更新一行**，而不会堆积重复文档
-
-- **管线编排引擎**：**`pipeline_runner.py`** 统一调度四个阶段
-  - **阶段链接**：采集 → 清洗 → AI处理 → 写库/导出
-  - **日志流式采集**：各阶段以 **`subprocess.Popen`** 并发运行，**`pipeline_runner.py`** 实时拉取和缓冲子进程的 stdout/stderr，通过 Streamlit 展示进度
-  - **统一 AI 接口**：**`ai_processor_common.py`** 提供统一的提示词构建和请求封装
-    - 支持 **DeepSeek** (OpenAI 兼容 API)
-    - 支持 **Ollama** (本地大模型)
-  - **可视化输出**：可选使用 **matplotlib** 生成图表并保存
-  - **灵活存储策略**：通过 **`STORAGE_OPTIONS`** / **`READ_OPTIONS`** 配置
-    - 仅入库 MongoDB
-    - 仅保存本地 JSON/JSONL
-    - 同时存储
-
-- **调度 UI（Streamlit）**：**`RxServer/webui.py`** 与 **`webui_core.py`** 联动
-  - **配置编辑**：Streamlit 表单让用户设置爬虫参数、清洗规则、AI 模型参数等，组装为 **`PipelineConfig`**
-  - **实时监控**：日志、进度条、错误提示等注入到 **`PipelineRunner.run_full_pipeline()`** 的执行过程
-  - **辅助工具**：**`webui_core.py`** 封装子进程管理、MongoDB 同步、配置验证等逻辑
-
-- **大屏前端**：**Vue 3 + Vite + Pinia + @kjgl77/datav-vue3 + ECharts + axios**（见 `SentinelDashboard/package.json`）
-  - **高性能仪表板**：基于 DataV 组件搭建电子屏展示风格，使用 ECharts 渲染动态图表
-  - **状态管理**：Pinia 集中管理应用状态，支持实时响应
-  - **链接验证**：外链存活状态调用后端 **check_url** 接口，避免浏览器差异与跨域困扰
-  - **容错降级**：API 不可用时自动降级读本地聚合 **JSONL** 文件，保证可用性
-
-- **一键启动**：根目录 **`python start.py`** 统一拉起全栈
-  - 后台子进程启动 **FastAPI** (`sentinel_api.py`)
-  - 可选启动前端 dev 服务 **`npm run dev`**
-  - 前台阻塞启动 **Streamlit** (`webui.py`)
-  - API 日志默认写入 **`sentinel_api.log`**（根目录）
-  - 支持 `--api-only`、`--no-frontend` 等参数定制启动模式
-
-**可选配图**（按需放入 **`docs/assets/`**）：**`architecture.png`**（系统架构图）、**`pipeline-flow.png`**（流程图）、**`dashboard-demo.gif`**（演示 GIF）、**`streamlit-webui.png`**（Streamlit 截图）。
+**可选配图**（不占「技术要点」正文篇幅，按需放入 **`docs/assets/`**）：架构图 **`architecture.png`**（类型：**系统架构图**）、全流程 **`pipeline-flow.png`**（类型：**流程图**）、大屏 **`dashboard-demo.gif`**（类型：**演示 GIF**）、Streamlit **`streamlit-webui.png`**（类型：**界面截图**）。
 
 ---
 
@@ -204,27 +158,6 @@ cd SentinelDashboard && npm install && npm run dev
 `uv sync`、`main.py` 参数、`uvicorn api.main:app` 等均以 **`MediaCrawler/README.md`** 为准；根目录 **`pip`** 依赖与爬虫子工程的依赖互不替代。
 
 </details>
-
----
-
-## 🗺️ 路线图
-
-- [ ] 根目录补充 **`LICENSE`**（当前仅 **`MediaCrawler/`** 自带许可文件）。  
-- [ ] 可选：**Docker Compose**（Mongo / API / 前端产物；仓库内暂无 Dockerfile）。  
-- [ ] 按需接入 **pytest + Vitest** CI。
-
----
-
-## 许可证
-
-仓库 **根目录当前未包含** `LICENSE`。使用 **`MediaCrawler/`** 时请遵守该子目录许可与 **[原项目说明](https://github.com/NanmiCoder/MediaCrawler)**。
-
----
-
-## Logo 绘图提示词（可选）
-
-> Minimalist flat vector logo, name "RxSentinel", dark navy background, thin cyan grid lines, shield or radar glyph merged with medical cross hint, high contrast, no decorative text, square 1024×1024, GitHub README friendly.  
-> 科技感指挥中心、深蓝 / 青色、扁平矢量、留白足、不要写实照片。
 
 ---
 

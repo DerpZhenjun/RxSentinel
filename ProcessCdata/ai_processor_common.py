@@ -310,7 +310,14 @@ def run_platform_pipeline(
                     try:
                         data = json.loads(line.strip())
                         comment_text = data.get("content", data.get("original_content", ""))
-                        video_title = data.get("injected_video_title", "未提供标题")
+                        # 不能写 get("injected_video_title", "未提供标题")：键存在且为 "" 时不会用默认，导致写库 video_title 为空。
+                        picked = ""
+                        for _k in ("injected_video_title", "video_title", "title", "desc"):
+                            _v = data.get(_k)
+                            if _v is not None and str(_v).strip():
+                                picked = str(_v).strip()
+                                break
+                        prompt_title = picked or "未提供标题"
                         author_name = build_author_name(data)
 
                         if not comment_text:
@@ -319,7 +326,7 @@ def run_platform_pipeline(
 
                         pbar.set_postfix_str(f"{comment_text[:20].replace(chr(10), ' ')}...", refresh=False)
                         formatted_prompt = prompt_template.format(
-                            video_title=video_title,
+                            video_title=prompt_title,
                             author=author_name,
                             comment_text=comment_text,
                         )
@@ -339,7 +346,7 @@ def run_platform_pipeline(
 
                             final_record = {
                                 "source_platform": platform,
-                                "video_title": video_title,
+                                "video_title": picked,
                                 "source_url": source_url,
                                 "original_content": original_content,
                                 "platform": platform_name,

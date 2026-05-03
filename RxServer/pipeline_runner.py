@@ -181,14 +181,22 @@ def has_raw_data(platform: str) -> bool:
     return False
 
 
+def _jsonl_nonempty(path: str) -> bool:
+    """空文件/仅换行视为「无数据」，避免误跳过后续阶段重跑。"""
+    try:
+        return os.path.exists(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
 def has_filtered_data(platform: str) -> bool:
-    return os.path.exists(
+    return _jsonl_nonempty(
         os.path.join(PROCESS_DIR, "data", platform, "jsonl", "filtered_comments.jsonl")
     )
 
 
 def has_ai_data(platform: str) -> bool:
-    return os.path.exists(
+    return _jsonl_nonempty(
         os.path.join(PROCESS_DIR, "data", platform, "jsonl", "ai_extracted_channels.jsonl")
     )
 

@@ -130,6 +130,10 @@ export const useSentinelStore = defineStore('sentinel', () => {
     return '';
   };
 
+  /** 管线/JSONL 提供的作品标题；不与落地链接混写（无标题时由大屏统一占位文案）。 */
+  const normalizeSourceTitle = (item) =>
+    String(item.video_title || item.injected_video_title || '').trim();
+
   /** 榜单点击：`clickCycleMap` 轮询同源实体对应的多条卡片 */
   const focusMerchant = (merchantName, platformName) => {
     if (!merchantName) return;
@@ -164,7 +168,7 @@ export const useSentinelStore = defineStore('sentinel', () => {
     content: item.original_content || '无原文',
     analysis: item.AI_analysis || '暂无研判',
     source_url: normalizeSourceUrl(item.source_url),
-    video_title: item.video_title
+    video_title: normalizeSourceTitle(item)
   });
 
   /** `intelData` 变后全量派生：平台计数、高危榜、顶部 KPI */

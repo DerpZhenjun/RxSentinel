@@ -261,6 +261,19 @@ class TestToContractDoc:
         doc = to_contract_doc(self._raw(source_url="https://www.bilibili.com/video/BV1xx411c7mD"))
         assert "BV1xx411c7mD" in doc["source_url"]
 
+    def test_video_title_coalesces_from_injected_when_primary_missing(self):
+        raw = {k: v for k, v in self._raw().items() if k != "video_title"}
+        raw["injected_video_title"] = "爬取侧注入标题"
+        doc = to_contract_doc(raw, now_ts=1700000000)
+        assert doc["video_title"] == "爬取侧注入标题"
+
+    def test_empty_video_title_string_still_uses_injected(self):
+        doc = to_contract_doc(
+            self._raw(video_title="", injected_video_title="笔记标题"),
+            now_ts=1700000000,
+        )
+        assert doc["video_title"] == "笔记标题"
+
     def test_all_required_fields_present(self):
         doc = to_contract_doc(self._raw())
         required = [

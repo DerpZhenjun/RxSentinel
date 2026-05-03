@@ -29,26 +29,26 @@
               </div>
               <div class="entity-name safe" v-else>实体: 无</div>
 
-              <a
-                class="source-link"
-                :href="row.item.source_url"
-                target="_blank"
-                rel="noopener noreferrer"
+              <div
+                class="source-title-block"
                 v-if="isValidUrl(row.item.source_url)"
-                title="跳转原始来源"
               >
-                🔗 {{ formatTitle(row.item.video_title || '未知来源内容') }}
-              </a>
-              <span
-                v-if="isValidUrl(row.item.source_url) && store.urlAliveness[row.item.source_url] === 'dead'"
-                class="source-warn source-warn-dead"
-                title="原始内容已被平台删除"
-              >⚠</span>
-              <span
-                v-else-if="isValidUrl(row.item.source_url) && store.urlAliveness[row.item.source_url] === 'unknown'"
-                class="source-warn source-warn-unknown"
-                title="存活状态未知（可能已删除或无法检测）"
-              >？</span>
+                <span class="field-label">来源标题</span>
+                <a
+                  class="source-link"
+                  :href="row.item.source_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="落地链接：在浏览器中打开该作品/笔记的原始页面（与标题文案无关）"
+                >
+                  🔗 {{ formatTitle(row.item.video_title) }}
+                </a>
+                <span
+                  v-if="store.urlAliveness[row.item.source_url] === 'dead'"
+                  class="source-warn source-warn-dead"
+                  title="服务端判定：该落地页已失效或疑似被平台删除"
+                >⚠</span>
+              </div>
             </div>
 
             <div class="card-content">"{{ row.item.content }}"</div>
@@ -103,9 +103,11 @@ const refreshViewportSize = () => {
   viewportHeight.value = el.clientHeight;
 };
 
+/** 展示用作品标题；无管线字段时统一占位，不把 BV/av/路径误当作「标题」。 */
 const formatTitle = (title) => {
-  if (!title) return '未知来源内容';
-  return title.length > 20 ? title.substring(0, 20) + '...' : title;
+  const t = String(title || '').trim();
+  if (!t) return '标题未收录';
+  return t.length > 20 ? t.substring(0, 20) + '...' : t;
 };
 
 /** 拦 Markdown 半成品链、无路径号的 `/video/`，禁止 `<a>` 误跳 */
@@ -209,16 +211,16 @@ onBeforeUnmount(() => {
   100% { box-shadow: 0 0 0px transparent; border-color: #ff4d4f; }
 }
 
-.card-header { display: flex; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.card-header { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; font-size: 13px; }
+.source-title-block { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-left: auto; max-width: min(100%, 320px); justify-content: flex-end; }
+.field-label { font-size: 11px; color: #6a9ec4; font-weight: normal; letter-spacing: 0.5px; flex-shrink: 0; }
 .source-tag { padding: 2px 6px; border-radius: 3px; margin-right: 10px; font-weight: bold; }
 .entity-name { background: rgba(255,77,79,0.2); color: #ff4d4f; border: 1px solid #ff4d4f; padding: 2px 8px; border-radius: 3px; font-weight: bold; }
 .entity-name.safe { background: rgba(255,255,255,0.1); color: #aaa; border: 1px solid #555; }
-.source-link { margin-left: auto; color: #8bbce6; text-decoration: none; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s; flex-shrink: 0; }
+.source-link { color: #8bbce6; text-decoration: none; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s; flex-shrink: 0; }
 .source-link:hover { color: #00baff; text-decoration: underline; }
 .source-warn { font-size: 0.75em; opacity: 0.9; margin-left: 3px; vertical-align: super; font-weight: bold; flex-shrink: 0; cursor: default; }
 .source-warn-dead { color: #faad14; }
-.source-warn-unknown { color: #888; font-size: 0.8em; }
-
 .card-content { font-size: 14px; line-height: 1.6; color: #d8eeff; font-style: italic; margin-bottom: 10px; background: rgba(0,0,0,0.28); padding: 8px; border-radius: 4px; }
 .card-analysis { font-size: 13px; color: #ffd66f; line-height: 1.5; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px; }
 .ai-icon { font-weight: bold; color: #ff7675; }

@@ -10,10 +10,9 @@ from fastapi.routing import APIRouter
 from pymongo import DESCENDING, UpdateOne
 from pymongo.errors import PyMongoError
 from pydantic import BaseModel
-from sentinel_contract import upgrade_existing_doc
+from sentinel_contract import coalesce_video_title, upgrade_existing_doc
 
-import sentinel_api
-
+import sentinel_core
 
 router = APIRouter()
 
@@ -48,6 +47,7 @@ _url_check_cache: dict[str, tuple[bool | None, float]] = {}
 _URL_CHECK_TTL = 3600.0
 
 # B 站常见「软 404」：HTTP 仍 200，靠 HTML 片段特征拦；列表须与爬虫侧观测对齐以减少误判。
+# 宜保守：误杀会把存活稿件标成「已删除」。勿加入常规稿件页也含有的通用 HTML（如全站统一 title）。
 _BILI_DEAD_SIGNALS = [
     '"code":-404', '"code": -404',
     '"code":-404,', '"code": -404,',
@@ -55,8 +55,6 @@ _BILI_DEAD_SIGNALS = [
     "该内容不存在", "稿件不见了", "视频不见了", "已失效",
     "内容已失效", "视频去哪了", "抱歉，您所访问的内容不存在",
     "视频已删除", "up主已删除视频", "因违规被删除",
-    "<title>哔哩哔哩 (゜-゜)つロ 干杯~-bilibili</title>",
-    "window._error",
     '"status":404', '"status": 404',
 ]
 _BROWSER_UA = (
@@ -141,7 +139,7 @@ def _normalize_doc(doc: dict[str, Any]) -> LeadItem:
     return LeadItem(
         schema_version=doc.get("schema_version", "legacy"),
         contract=doc.get("contract", "sentinel_leads.legacy"),
-        video_title=doc.get("video_title", ""),
+        video_title=coalesce_video_title(doc),
         source_url=doc.get("source_url", ""),
         original_content=doc.get("original_content", ""),
         platform=doc.get("platform", "无"),
@@ -168,11 +166,11 @@ def _set_stats_cache(data: dict) -> None:
 
 
 @router.get("/api/sentinel/check_url")
-@sentinel_api.limiter.limit("120/minute")
+@sentinel_core.limiter.limit("120/minute")
 async def check_url(
     request: Request,
     url: str = Query(..., description="待检测的原始来源 URL"),
-    _: None = Depends(sentinel_api.require_auth),
+    _: None = Depends(sentinel_core.require_auth),
 ):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(
@@ -184,16 +182,16 @@ async def check_url(
 
 
 @router.get("/api/sentinel/leads", response_model=LeadListResponse)
-@sentinel_api.limiter.limit("60/minute")
+@sentinel_core.limiter.limit("60/minute")
 async def get_leads(
     request: Request,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=5000, ge=1, le=50000),
-    _: None = Depends(sentinel_api.require_auth),
+    _: None = Depends(sentinel_core.require_auth),
 ):
     query: dict[str, Any] = {}
     skip = (page - 1) * page_size
-    col = sentinel_api.get_collection()
+    col = sentinel_core.get_collection()
 
     try:
         total_cursor = col.aggregate([*_dedupe_stages(query), {"$count": "total"}])
@@ -233,21 +231,21 @@ async def get_leads(
             ),
         )
     except PyMongoError as exc:
-        raise sentinel_api._db_error("/api/sentinel/leads", exc) from exc
+        raise sentinel_core._db_error("/api/sentinel/leads", exc) from exc
 
 
 @router.get("/api/sentinel/stats")
-@sentinel_api.limiter.limit("30/minute")
+@sentinel_core.limiter.limit("30/minute")
 async def get_stats(
     request: Request,
-    _: None = Depends(sentinel_api.require_auth),
+    _: None = Depends(sentinel_core.require_auth),
 ):
     cached = _get_cached_stats()
     if cached is not None:
         return cached
 
     base_query: dict[str, Any] = {}
-    col = sentinel_api.get_collection()
+    col = sentinel_core.get_collection()
 
     try:
         total = int(
@@ -301,4 +299,4 @@ async def get_stats(
         return result
 
     except PyMongoError as exc:
-        raise sentinel_api._db_error("/api/sentinel/stats", exc) from exc
+        raise sentinel_core._db_error("/api/sentinel/stats", exc) from exc

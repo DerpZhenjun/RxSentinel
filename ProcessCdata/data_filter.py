@@ -191,6 +191,68 @@ def platform_aliases(platform):
     return alias_map.get(platform, [platform])
 
 
+def _merge_one_contents_obj_into_map(c_data: dict, title_map: dict) -> None:
+    """单条 search_contents 行解析，与本地按日分支逻辑一致。"""
+    item_id = (c_data.get("note_id") or c_data.get("aweme_id")
+               or c_data.get("bvid") or c_data.get("video_id")
+               or c_data.get("photo_id") or c_data.get("mid")
+               or c_data.get("content_id") or c_data.get("id"))
+    item_title = (c_data.get("title") or c_data.get("note_title")
+                  or c_data.get("desc") or "")
+    if item_id:
+        title_map[str(item_id)] = item_title
+    numeric_id = c_data.get("id") or c_data.get("aid")
+    if numeric_id and str(numeric_id) != str(item_id):
+        title_map[str(numeric_id)] = item_title
+    bvid_val = c_data.get("bvid")
+    vid_val = c_data.get("video_id")
+    if bvid_val and vid_val and str(bvid_val) != str(vid_val):
+        title_map[str(bvid_val)] = item_title
+        title_map[str(vid_val)] = item_title
+
+
+def build_global_contents_title_map(platform_input_dir: str) -> dict[str, str]:
+    """扫描 `search_contents_*.jsonl`，合并 id→标题。供「从数据库读」回放时补齐 injected_video_title。
+
+    不限制日期：评论在 Mongo 里可能跨日，需与历史上全部内容索引对齐。
+    """
+    title_map: dict[str, str] = {}
+    if not os.path.isdir(platform_input_dir):
+        return title_map
+    for fn in sorted(os.listdir(platform_input_dir)):
+        if not (fn.startswith("search_contents_") and fn.endswith(".jsonl")):
+            continue
+        path = os.path.join(platform_input_dir, fn)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        _merge_one_contents_obj_into_map(json.loads(line), title_map)
+                    except json.JSONDecodeError:
+                        pass
+        except OSError as exc:
+            logger.warning("读取内容索引失败 %s: %s", path, exc)
+    return title_map
+
+
+def inject_comment_title_from_map(data: dict, title_map: dict) -> None:
+    """用评论主键 / B 站 oid 查映射，写入 injected_video_title（与本地分支一致）。"""
+    c_item_id = (data.get("note_id") or data.get("aweme_id")
+                 or data.get("bvid") or data.get("video_id")
+                 or data.get("photo_id") or data.get("mid")
+                 or data.get("content_id") or data.get("id"))
+    _title = title_map.get(str(c_item_id), "") if c_item_id else ""
+    if not _title:
+        _oid = data.get("oid")
+        if _oid:
+            _title = title_map.get(str(_oid), "")
+    if _title:
+        data["injected_video_title"] = _title
+
+
 # MongoClient 按 URI 进程级单例。
 
 _mongo_pool: dict[str, MongoClient] = {}
@@ -256,6 +318,14 @@ def run_filter_for_platform(platform, cfg: FilterConfig):
                 open(output_file, 'w', encoding='utf-8').close()
                 return
 
+            contents_title_map = build_global_contents_title_map(platform_input_dir)
+            logger.info(
+                "[%s] Mongo 回放：search_contents 标题映射键 %d 个（目录 %s）",
+                platform.upper(),
+                len(contents_title_map),
+                platform_input_dir,
+            )
+
             total_lines = len(comments)
             kept = 0
             skipped_time = 0
@@ -275,6 +345,8 @@ def run_filter_for_platform(platform, cfg: FilterConfig):
                         continue
                     if not data.get("injected_video_title"):
                         data["injected_video_title"] = data.get("video_title", "")
+                    if not str(data.get("injected_video_title") or "").strip():
+                        inject_comment_title_from_map(data, contents_title_map)
 
                     matched_ch, matched_dr = detect_keywords(
                         content, norm_channels, norm_drugs,
@@ -364,25 +436,10 @@ def run_filter_for_platform(platform, cfg: FilterConfig):
                         with open(contents_file, 'r', encoding='utf-8') as f_cont:
                             for line in f_cont:
                                 try:
-                                    c_data = json.loads(line.strip())
-                                    item_id = (c_data.get("note_id") or c_data.get("aweme_id")
-                                               or c_data.get("bvid") or c_data.get("video_id")
-                                               or c_data.get("photo_id") or c_data.get("mid")
-                                               or c_data.get("content_id") or c_data.get("id"))
-                                    item_title = (c_data.get("title") or c_data.get("note_title")
-                                                  or c_data.get("desc") or "")
-                                    if item_id:
-                                        daily_title_map[str(item_id)] = item_title
-                                    # 哔哩哔哩：评论 oid 常为 avid，内容侧需双键（bvid / avid）注入同一标题。
-                                    numeric_id = c_data.get("id") or c_data.get("aid")
-                                    if numeric_id and str(numeric_id) != str(item_id):
-                                        daily_title_map[str(numeric_id)] = item_title
-                                    # 哔哩哔哩：内容行若同时含 bvid 与 avid，两套键都写入标题映射。
-                                    bvid_val = c_data.get("bvid")
-                                    vid_val = c_data.get("video_id")
-                                    if bvid_val and vid_val and str(bvid_val) != str(vid_val):
-                                        daily_title_map[str(bvid_val)] = item_title
-                                        daily_title_map[str(vid_val)] = item_title
+                                    raw = line.strip()
+                                    if not raw:
+                                        continue
+                                    _merge_one_contents_obj_into_map(json.loads(raw), daily_title_map)
                                 except json.JSONDecodeError:
                                     pass
 

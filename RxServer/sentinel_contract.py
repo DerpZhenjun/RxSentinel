@@ -91,6 +91,19 @@ def build_lead_fingerprint(source_platform: str, source_url: str, original_conte
     return hashlib.sha1(seed.encode("utf-8", errors="ignore")).hexdigest()
 
 
+def coalesce_video_title(raw: dict[str, Any]) -> str:
+    """合并多路标题：AI/契约 `video_title`、清洗阶段 `injected_video_title`、各平台 `title`/`desc`。
+
+    注意：``raw.get("injected_video_title", "默认")`` 在键存在且值为空串时**不会**使用默认，
+    必须显式遍历，否则爬取已写入的标题在入库时仍会丢。
+    """
+    for key in ("video_title", "injected_video_title", "title", "desc"):
+        v = raw.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
 def to_contract_doc(raw: dict[str, Any], now_ts: int | None = None) -> dict[str, Any]:
     """宽松 dict → 契约形状：填空默认、URL/平台名归一后走 `LeadContract.model_validate`。"""
     ts = int(now_ts if now_ts is not None else time.time())
@@ -103,7 +116,7 @@ def to_contract_doc(raw: dict[str, Any], now_ts: int | None = None) -> dict[str,
         "contract": LEAD_CONTRACT_NAME,
         "fingerprint": str(raw.get("fingerprint") or build_lead_fingerprint(source_platform, source_url, original_content)),
         "source_platform": source_platform,
-        "video_title": str(raw.get("video_title") or "").strip(),
+        "video_title": coalesce_video_title(raw),
         "source_url": source_url,
         "original_content": original_content,
         "platform": normalize_platform_name(str(raw.get("platform") or "无")),

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 import sentinel_api
+import sentinel_core
 
 class FakeCollection:
     """极简 Mongo 替身：支撑 `$match/$sort/$group/...` 单测链路。"""
@@ -137,7 +138,7 @@ def _sample_docs():
 
 def test_leads_pagination_and_has_next(monkeypatch):
     fake_col = FakeCollection(_sample_docs())
-    monkeypatch.setattr(sentinel_api, "get_collection", lambda: fake_col)
+    monkeypatch.setattr(sentinel_core, "get_collection", lambda: fake_col)
 
     client = TestClient(sentinel_api.app)
     resp = client.get("/api/sentinel/leads?page=1&page_size=2")
@@ -159,7 +160,7 @@ def test_leads_pagination_and_has_next(monkeypatch):
 
 def test_leads_normalize_source_url_and_writeback(monkeypatch):
     fake_col = FakeCollection(_sample_docs())
-    monkeypatch.setattr(sentinel_api, "get_collection", lambda: fake_col)
+    monkeypatch.setattr(sentinel_core, "get_collection", lambda: fake_col)
 
     client = TestClient(sentinel_api.app)
     resp = client.get("/api/sentinel/leads?page=1&page_size=3")
@@ -191,16 +192,16 @@ _TEST_TOKEN = "test-secret-abc123"
 
 def _make_authed_client(monkeypatch, fake_col=None):
     """返回已配置 Token 的测试客户端 + monkeypatched 集合。"""
-    monkeypatch.setattr(sentinel_api, "_API_SECRET_KEY", _TEST_TOKEN)
+    monkeypatch.setattr(sentinel_core, "_API_SECRET_KEY", _TEST_TOKEN)
     if fake_col is not None:
-        monkeypatch.setattr(sentinel_api, "get_collection", lambda: fake_col)
+        monkeypatch.setattr(sentinel_core, "get_collection", lambda: fake_col)
     return TestClient(sentinel_api.app)
 
 
 class TestAuth:
     def test_dev_mode_no_token_required(self, monkeypatch):
         """_API_SECRET_KEY 为空时所有接口不需要鉴权（开发模式）。"""
-        monkeypatch.setattr(sentinel_api, "_API_SECRET_KEY", "")
+        monkeypatch.setattr(sentinel_core, "_API_SECRET_KEY", "")
         client = TestClient(sentinel_api.app)
         resp = client.get("/api/sentinel/schema")
         assert resp.status_code == 200

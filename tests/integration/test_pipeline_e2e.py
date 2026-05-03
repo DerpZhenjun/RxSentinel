@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.integration  # 真 Mongo；未起则 skip
 
 import sentinel_api as _sentinel_api_init  # noqa: F401 — 先加载宿主再取 routers.leads
+import sentinel_core  # noqa: F401
 import sys as _sys
 _leads_mod = _sys.modules["routers.leads"]
 
@@ -222,7 +223,7 @@ class TestApiReturnsAfterMerge:
             runner.run_merge_stage()
 
         # API：`get_collection` 指向测试集合
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/leads?page=1&page_size=10")
 
@@ -248,7 +249,7 @@ class TestApiReturnsAfterMerge:
              patch("pipeline_runner.MONGO_COLLECTION", "sentinel_leads"):
             runner.run_merge_stage()
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/leads?page=1&page_size=10")
 
@@ -276,7 +277,7 @@ class TestApiReturnsAfterMerge:
 
         _leads_mod._stats_cache["data"] = None  # 强制 stats 重算
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/stats")
 

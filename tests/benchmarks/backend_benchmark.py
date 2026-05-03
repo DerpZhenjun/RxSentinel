@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import sentinel_api
+import sentinel_core
 
 
 @dataclass
@@ -158,8 +159,8 @@ def run_case(dataset_size: int, page_size: int = 500, runs: int = 15) -> BenchRe
     fake_col = _FakeCollection(docs)
     fake_client = SimpleNamespace(close=lambda: None)
 
-    old_get_collection = sentinel_api.get_collection
-    sentinel_api.get_collection = lambda: (fake_client, fake_col)  # type: ignore
+    old_get_collection = sentinel_core.get_collection
+    sentinel_core.get_collection = lambda: (fake_client, fake_col)  # type: ignore
     try:
         client = TestClient(sentinel_api.app)
         client.get(f"/api/sentinel/leads?page=1&page_size={page_size}")
@@ -174,7 +175,7 @@ def run_case(dataset_size: int, page_size: int = 500, runs: int = 15) -> BenchRe
             elapsed.append((time.perf_counter() - t0) * 1000)
         rss_after = _get_rss_mb()
     finally:
-        sentinel_api.get_collection = old_get_collection  # type: ignore
+        sentinel_core.get_collection = old_get_collection  # type: ignore
 
     elapsed_sorted = sorted(elapsed)
     p50 = statistics.median(elapsed_sorted)

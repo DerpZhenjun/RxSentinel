@@ -15,10 +15,9 @@ from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration  # 本文件依赖真 Mongo；未部署则 skip
 
-# routers.leads 是通过 sentinel_api 的循环导入加载的。
-# 直接顶层 import 会在 sentinel_api 尚未完整加载时触发 ImportError，
-# 因此必须先确保 sentinel_api 完成初始化，再通过 sys.modules 拿到引用。
-import sentinel_api as _sentinel_api_init  # noqa: F401 — 先初始化宿主再解析 routers.leads
+# 先加载 `sentinel_api` 以注册 FastAPI 应用与路由。
+import sentinel_api as _sentinel_api_init  # noqa: F401
+import sentinel_core  # noqa: F401 — `patch.object(sentinel_core, "get_collection", …)` 用
 import sys as _sys
 _leads_mod = _sys.modules["routers.leads"]
 
@@ -187,7 +186,7 @@ class TestSentinelApiWithRealMongo:
         import sentinel_api
 
         col = test_db["sentinel_leads"]
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/leads?page=1&page_size=10")
 
@@ -203,7 +202,7 @@ class TestSentinelApiWithRealMongo:
         col = test_db["sentinel_leads"]
         col.insert_many([_make_lead(i) for i in range(3)])
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/leads?page=1&page_size=10")
 
@@ -217,7 +216,7 @@ class TestSentinelApiWithRealMongo:
         col = test_db["sentinel_leads"]
         col.insert_many([_make_lead(i) for i in range(5)])
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
 
             r1 = client.get("/api/sentinel/leads?page=1&page_size=2")
@@ -237,7 +236,7 @@ class TestSentinelApiWithRealMongo:
         # 清 stats 内存缓存，强制走聚合
         _leads_mod._stats_cache["data"] = None
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/stats")
 
@@ -254,7 +253,7 @@ class TestSentinelApiWithRealMongo:
         _leads_mod._stats_cache["ts"] = time.time()  # 缓存仍在 TTL 内
 
         col = test_db["sentinel_leads"]
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/stats")
 
@@ -273,7 +272,7 @@ class TestSentinelApiWithRealMongo:
         _leads_mod._stats_cache["data"] = {"total": 999, "top_platforms": [], "top_merchants": [], "source_platforms": []}
         _leads_mod._stats_cache["ts"] = time.time() - _leads_mod._STATS_TTL - 1  # 故意戳过期
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/stats")
 
@@ -294,7 +293,7 @@ class TestSentinelApiWithRealMongo:
 
         col.insert_many([base, dup])
 
-        with patch.object(sentinel_api, "get_collection", return_value=col):
+        with patch.object(sentinel_core, "get_collection", return_value=col):
             client = TestClient(sentinel_api.app)
             resp = client.get("/api/sentinel/leads?page=1&page_size=10")
 
