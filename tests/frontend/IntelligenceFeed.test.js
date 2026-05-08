@@ -12,6 +12,8 @@ const storeState = reactive({
   scrollTrigger: 0,
   activeIntelIndex: -1,
   loadMoreData: vi.fn(),
+  urlAliveness: reactive({}),
+  checkUrlAliveness: vi.fn(),
 });
 
 vi.mock('../../SentinelDashboard/src/stores/sentinelStore', () => ({
@@ -38,6 +40,8 @@ describe('IntelligenceFeed', () => {
     storeState.scrollTrigger = 0;
     storeState.activeIntelIndex = -1;
     storeState.loadMoreData = vi.fn();
+    storeState.urlAliveness = reactive({});
+    storeState.checkUrlAliveness = vi.fn();
   });
 
   afterEach(() => {
