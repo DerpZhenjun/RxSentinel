@@ -6,6 +6,8 @@
   # RxSentinel — Prescription gray-market intelligence pipeline
 
   **[English](README_EN.md) / [中文](README.md)**
+
+  **Live demo:** [https://derpzhenjun.github.io/RxSentinel/](https://derpzhenjun.github.io/RxSentinel/)
 </div>
 
 Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)**: the **`MediaCrawler/`** crawler submodule bundled in RxSentinel comes from it. **Please be sure to read and comply with the disclaimer and user obligations included in that repository**, treat the upstream project documentation as authoritative before use.
@@ -33,6 +35,8 @@ Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder
 **Data dashboard**
 
 The dashboard aggregates multi-platform leads, AI analysis, and high-risk entity rankings for prescription gray-market monitoring.
+
+**Try it live:** [https://derpzhenjun.github.io/RxSentinel/](https://derpzhenjun.github.io/RxSentinel/) (static demo powered by `extracted_channels.jsonl`)
 
 <img src="SentinelDashboard/public/dashboard-demo.gif" width="900" alt="RxSentinel dashboard demo">
 

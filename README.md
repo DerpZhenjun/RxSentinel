@@ -6,6 +6,8 @@
   # RxSentinel — 处方类灰产情报管线
 
   **[English](README_EN.md) / [中文](README.md)**
+
+  **在线演示：** [https://derpzhenjun.github.io/RxSentinel/](https://derpzhenjun.github.io/RxSentinel/)
 </div>
 
 感谢 **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** 开源项目：`RxSentinel` 内置的 **`MediaCrawler/`** 爬虫子模块来源于此。**请务必同时阅读并遵守该仓库自带的免责声明与用户义务**，使用前以原项目文档为准。
@@ -33,6 +35,8 @@
 **数据大屏**
 
 大屏实时汇总多平台线索、AI 研判与高险实体排行，用于处方类灰产监控指挥。
+
+**在线体验：** [https://derpzhenjun.github.io/RxSentinel/](https://derpzhenjun.github.io/RxSentinel/)（静态演示，数据来自 `extracted_channels.jsonl`）
 
 <img src="SentinelDashboard/public/dashboard-demo.gif" width="900" alt="RxSentinel 数据大屏演示">
 
