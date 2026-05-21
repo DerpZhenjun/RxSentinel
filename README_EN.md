@@ -22,6 +22,22 @@ Thanks to the open-source project **[MediaCrawler](https://github.com/NanmiCoder
 - **Smart deduplication and update**: Fingerprint-based identification, same-source data updates without duplication
 - **Multi-platform real-time display**: API, Web UI, dashboard three-end sync, supporting real-time monitoring
 
+---
+
+## 🎬 Project Demo
+
+**System architecture**
+
+<img src="SentinelDashboard/public/architecture.svg" width="900" alt="RxSentinel system architecture">
+
+**Data dashboard**
+
+The dashboard aggregates multi-platform leads, AI analysis, and high-risk entity rankings for prescription gray-market monitoring.
+
+<img src="SentinelDashboard/public/dashboard-demo.gif" width="900" alt="RxSentinel dashboard demo">
+
+---
+
 ## 🔄 Core Process (Four-Stage Pipeline)
 
 ```mermaid
@@ -55,8 +71,6 @@ graph LR
 - **Scheduling**: Streamlit (`RxServer/webui.py`) with `webui_core.py` for subprocess spawning.  
 - **Dashboard**: `SentinelDashboard/` (Vite + Vue 3, Pinia, DataV, ECharts); reads offline **JSONL** when API unavailable.  
 - **One-click Local**: Root **`python start.py`** starts API, Streamlit, optional frontend dev simultaneously.
-
-**Optional Images** (not in main text, place in **`docs/assets/`** as needed): Architecture diagram **`architecture.png`** (Type: **System Architecture Diagram**), Full process **`pipeline-flow.png`** (Type: **Flow Diagram**), Dashboard **`dashboard-demo.gif`** (Type: **Demo GIF**), Streamlit **`streamlit-webui.png`** (Type: **Interface Screenshot**).
 
 ---
 
@@ -194,6 +208,24 @@ After startup:
 | Dashboard | http://localhost:5173 |
 
 When the API is started via `start.py`, logs are written to **`sentinel_api.log`** at the repo root by default.
+
+### Using the built-in verification test dataset
+
+Use this right after install when crawlers are not set up yet — a quick end-to-end path through **AI structuring → dashboard**, without real collection or filtering.
+
+1. Start with `python start.py` as above, then open Streamlit: http://localhost:8501  
+2. In the left sidebar under **⚙️ Global parameters**, enable:
+   - **Use built-in verification test dataset** — skips crawl/filter, installs synthetic `filtered_comments.jsonl`, then runs AI → dashboard merge  
+   - Optional: **Back up existing filtered_comments.jsonl before installing the verification set** — saves the previous file as `.bak_demo_verify` before overwrite  
+3. **Target platforms** default to bili / xhs / zhihu / douyin / tieba / weibo; add or remove as needed  
+4. Start the pipeline from the main Streamlit panel
+
+Notes:
+
+- Sample data lives under `ProcessCdata/data/_demo_verify/`; expected outcomes are in `ProcessCdata/data/_demo_verify/demo_verify_expectations.json`  
+- In verification mode, crawl/filter/storage/read and dashboard merge are fixed to **local files only** — intermediate results are **not written to MongoDB**  
+- If a platform already has `ai_extracted_channels.jsonl`, **AI is skipped** to save API tokens; to re-run AI, select that platform under overwrite options for AI analysis  
+- The dashboard requests the Mongo API by default; if it does not match local merged JSONL, set `VITE_USE_JSONL_FIRST=true` in `SentinelDashboard/.env` and restart the dashboard dev server
 
 <details>
 <summary>📎 <strong>Running MediaCrawler Alone</strong></summary>

@@ -22,6 +22,21 @@
 - **智能去重与更新**：基于指纹识别，同源数据只更新不重复
 - **多端实时展示**：API、Web UI、大屏三端同步，支持实时监控
 
+---
+
+## 🎬 项目演示
+
+**系统架构**
+
+<img src="SentinelDashboard/public/architecture.svg" width="900" alt="RxSentinel 系统架构图">
+
+**数据大屏**
+
+大屏实时汇总多平台线索、AI 研判与高险实体排行，用于处方类灰产监控指挥。
+
+<img src="SentinelDashboard/public/dashboard-demo.gif" width="900" alt="RxSentinel 数据大屏演示">
+
+---
 
 ## 🔄 核心流程（四阶段管线）
 
@@ -56,8 +71,6 @@ graph LR
 - **调度**：Streamlit（`RxServer/webui.py`）配合 `webui_core.py` 起子进程。  
 - **大屏**：`SentinelDashboard/`（Vite + Vue 3、Pinia、DataV、ECharts）；接口不可用时可读离线 **JSONL**。  
 - **本地一键**：根目录 **`python start.py`** 可同时起 API、Streamlit、可选前端 dev。
-
-**可选配图**（不占「技术要点」正文篇幅，按需放入 **`docs/assets/`**）：架构图 **`architecture.png`**（类型：**系统架构图**）、全流程 **`pipeline-flow.png`**（类型：**流程图**）、大屏 **`dashboard-demo.gif`**（类型：**演示 GIF**）、Streamlit **`streamlit-webui.png`**（类型：**界面截图**）。
 
 ---
 
@@ -195,6 +208,24 @@ python start.py
 | 大屏 | http://localhost:5173 |
 
 通过 `start.py` 拉起 API 时，日志默认写入仓库根目录 **`sentinel_api.log`**。
+
+### 使用内置验证测试集
+
+适合刚完成安装、尚未配置爬虫时，快速体验 **AI 结构化 → 大屏展示** 全链路，无需真实采集与清洗。
+
+1. 按上文启动 `python start.py`，打开 Streamlit：http://localhost:8501  
+2. 在左侧边栏 **⚙️ 全局参数配置** 勾选：
+   - **使用内置验证测试数据集** — 跳过采集/清洗，安装合成 `filtered_comments.jsonl` 后直接执行 AI → 大屏合并  
+   - 可选：**安装验证集前备份现有 filtered_comments.jsonl** — 覆盖前将原文件备份为 `.bak_demo_verify`  
+3. **目标平台** 默认包含 bili / xhs / zhihu / douyin / tieba / weibo，可按需增删  
+4. 在 Streamlit 主界面启动管线
+
+说明：
+
+- 内置样本位于 `ProcessCdata/data/_demo_verify/`；预期结果对照 `ProcessCdata/data/_demo_verify/demo_verify_expectations.json`  
+- 验证集模式下，爬虫/清洗/存储与读取及大屏合并固定为 **只存本地、从本地读**，中间结果 **不入 Mongo**  
+- 若某平台已有 `ai_extracted_channels.jsonl`，将 **跳过 AI** 以节省 API token；需重跑时在「覆盖 AI 分析」中勾选对应平台  
+- 大屏默认请求 Mongo API；若与本地合并文件不一致，请在 `SentinelDashboard/.env` 设置 `VITE_USE_JSONL_FIRST=true` 并重启大屏 dev 服务
 
 <details>
 <summary>📎 <strong>单独运行 MediaCrawler</strong></summary>
