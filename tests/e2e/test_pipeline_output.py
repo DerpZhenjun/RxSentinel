@@ -21,7 +21,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 BILI_FIXTURE = FIXTURES_DIR / "bili_filtered_comments.jsonl"
 XHS_FIXTURE = FIXTURES_DIR / "xhs_filtered_comments.jsonl"
 
-PROMPT_TEMPLATE = "{video_title}\n{author}\n{comment_text}"
+PROMPT_TEMPLATE = "{video_title}\n{author}\n{parent_comment}\n{comment_text}"
 ENGINE = "MockLLM"
 MODEL = "mock-model-v1"
 
@@ -120,7 +120,7 @@ class TestBiliBasicFields:
         """每条 lead 必须包含所有必要字段。"""
         required = {
             "source_platform", "video_title", "source_url",
-            "original_content", "platform", "merchant", "AI_analysis",
+            "original_content", "thread_parent_content", "platform", "merchant", "AI_analysis",
         }
         lines = _read_fixture(BILI_FIXTURE)[:1]
         leads = _run_pipeline("bili", lines, lambda _: _valid_trade_response())

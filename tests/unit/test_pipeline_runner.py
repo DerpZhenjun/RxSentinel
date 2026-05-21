@@ -2,10 +2,20 @@
 
 不落真实子进程、Mongo、磁盘。"""
 
-import pytest
-from unittest.mock import patch, MagicMock
+import json
 
-from pipeline_runner import PipelineConfig, PipelineRunner, CRAWLER_DIR, PROCESS_DIR, DASHBOARD_DIR
+import pytest
+from unittest.mock import patch
+
+from pipeline_runner import (
+    DASH_MERGE_SKIP,
+    PipelineConfig,
+    PipelineRunner,
+    CRAWLER_DIR,
+    PROCESS_DIR,
+    DASHBOARD_DIR,
+    ROOT_DIR,
+)
 
 
 def _cfg(**overrides) -> PipelineConfig:
@@ -320,6 +330,73 @@ class TestFullPipeline:
         shell_calls, _ = self._run_full(cfg)
         assert len(shell_calls) == 3
 
+    def test_full_pipeline_demo_verify_runs_generator_then_ai(self):
+        """验证集模式：生成脚本 + AI，不跑爬虫与清洗 shell。"""
+        cfg = _cfg(platforms=["bili"], demo_verify_dataset=True)
+        shell_calls, _ = self._run_full(cfg)
+        assert len(shell_calls) == 2
+        gen_cmd, gen_cwd = shell_calls[0]
+        assert "generate_demo_verify_dataset.py" in gen_cmd
+        assert "--install-to-process-data" in gen_cmd
+        assert gen_cwd == ROOT_DIR
+        ai_cmd = shell_calls[1][0]
+        assert "ollama_processor.py" in ai_cmd or "deepseek_processor.py" in ai_cmd
+
+    def test_full_pipeline_demo_verify_backup_flag(self):
+        cfg = _cfg(
+            platforms=["bili"],
+            demo_verify_dataset=True,
+            demo_verify_backup_filtered=True,
+        )
+        shell_calls, _ = self._run_full(cfg)
+        assert "--backup-existing-filtered" in shell_calls[0][0]
+
+    def test_full_pipeline_demo_verify_skips_ai_when_output_exists(self):
+        """验证集第二次启动：已有 ai_extracted_channels.jsonl 时不应再调 AI（省 token）。"""
+        cfg = _cfg(platforms=["bili"], demo_verify_dataset=True)
+        shell_calls, _ = [], []
+
+        def _fake_exists(path: str) -> bool:
+            from pipeline_runner import SENTINEL_API_FILE
+            if path == SENTINEL_API_FILE:
+                return True
+            return False
+
+        runner = _make_runner(cfg, shell_calls, [])
+        with patch(f"{_MOD}.has_raw_data", return_value=False), \
+             patch(f"{_MOD}.has_filtered_data", return_value=False), \
+             patch(f"{_MOD}.has_ai_data", return_value=True), \
+             patch(f"{_MOD}.save_variant_lexicon_for_ui"), \
+             patch(f"{_MOD}.save_prompt_template"), \
+             patch(f"{_MOD}._sync_core"), \
+             patch(f"{_MOD}.cleanup_stage_local_files"), \
+             patch(f"{_MOD}.os.path.exists", side_effect=_fake_exists), \
+             patch(f"{_MOD}.requests.get", side_effect=ConnectionError), \
+             patch(f"{_MOD}.os.makedirs"):
+            runner.run_full_pipeline()
+        assert len(shell_calls) == 1
+        assert "generate_demo_verify_dataset.py" in shell_calls[0][0]
+        assert not any(
+            "deepseek_processor.py" in c[0] or "ollama_processor.py" in c[0]
+            for c in shell_calls
+        )
+
+    def test_full_pipeline_dash_only_takes_precedence_over_demo_verify(self):
+        """dash_only 优先：与 demo_verify 同时 True 时不执行验证集脚本（WebUI 会拦截同时勾选）。"""
+        cfg = _cfg(
+            dash_only=True,
+            demo_verify_dataset=True,
+            dash_merge_mode=DASH_MERGE_SKIP,
+            ai_platform="DeepSeek (云端 API)",
+            ds_api_key="",
+        )
+        shell_calls, spawn_calls = [], []
+        runner = _make_runner(cfg, shell_calls, spawn_calls)
+        with patch(f"{_MOD}.requests.get", side_effect=ConnectionError), \
+             patch(f"{_MOD}.os.makedirs"):
+            runner.run_full_pipeline()
+        assert shell_calls == []
+
     def test_full_pipeline_spawns_sentinel_api(self):
         """SENTINEL_API_FILE 存在且 API 不可达时，应通过 spawn_fn 启动 Sentinel API。"""
         cfg = _cfg(platforms=["bili"])
@@ -329,17 +406,30 @@ class TestFullPipeline:
             f"Sentinel API 未被 spawn，实际 spawn 调用：{cmds}"
 
     def test_full_pipeline_always_spawns_npm(self):
-        """收尾仍会 `npm run dev`；`auto_push` 只影响 merge，不断全局 spawn。"""
-        for auto_push in (True, False):
-            _, spawn_calls = self._run_full(_cfg(auto_push=auto_push))
+        """收尾仍会 `npm run dev`；阶段四跳过与否只影响 merge，不影响 spawn 前端。"""
+        for dash_merge_mode in ("同时入库和存入本地", DASH_MERGE_SKIP):
+            _, spawn_calls = self._run_full(_cfg(dash_merge_mode=dash_merge_mode))
             cmds = [cmd for cmd, _ in spawn_calls]
             assert any("npm" in c for c in cmds), \
-                f"auto_push={auto_push} 时 npm 未被 spawn，实际调用：{cmds}"
+                f"dash_merge_mode={dash_merge_mode!r} 时 npm 未被 spawn，实际调用：{cmds}"
 
-    def test_full_pipeline_auto_push_false_skips_data_merge(self):
-        """auto_push=False 时，merge 阶段应提前返回，不写 JSONL 文件。"""
+    def test_full_pipeline_dash_only_skips_upstream_shell(self):
+        """dash_only 时不跑采集 / 清洗 / AI，且不触发 DeepSeek 等 shell。"""
+        cfg = _cfg(dash_only=True, dash_merge_mode=DASH_MERGE_SKIP,
+                    ai_platform="DeepSeek (云端 API)", ds_api_key="")
+        shell_calls, spawn_calls = [], []
+        runner = _make_runner(cfg, shell_calls, spawn_calls)
+        with patch(f"{_MOD}.requests.get", side_effect=ConnectionError), \
+             patch(f"{_MOD}.os.makedirs"):
+            runner.run_full_pipeline()
+        assert shell_calls == []
+        cmds = [cmd for cmd, _ in spawn_calls]
+        assert any("npm" in c for c in cmds), f"npm 未被 spawn：{cmds}"
+
+    def test_full_pipeline_merge_skip_writes_no_jsonl(self):
+        """`dash_merge_mode=跳过` 时 merge 阶段应提前返回，不写 JSONL 文件。"""
         open_calls = []
-        cfg = _cfg(auto_push=False)
+        cfg = _cfg(dash_merge_mode=DASH_MERGE_SKIP)
         shell_calls, spawn_calls = [], []
         runner = _make_runner(cfg, shell_calls, spawn_calls)
 
@@ -361,7 +451,45 @@ class TestFullPipeline:
              patch(f"{_MOD}.os.makedirs"), \
              patch("builtins.open", side_effect=tracking_open):
             runner.run_full_pipeline()
-        assert open_calls == [], "auto_push=False 时不应写入 extracted_channels.jsonl"
+        assert open_calls == [], "阶段四跳过时不应写入 extracted_channels.jsonl"
+
+    def test_merge_mongo_only_does_not_open_jsonl_for_write(self, tmp_path):
+        """「只入库」重建合并时应只组装 Mongo 行，不写 public/extracted_channels.jsonl。"""
+        proc_root = tmp_path / "ProcessCdata"
+        jdir = proc_root / "data" / "bili" / "jsonl"
+        jdir.mkdir(parents=True)
+        rec = {
+            "video_title": "x",
+            "source_url": "https://example.com/a",
+            "original_content": "c",
+            "platform": "微信",
+            "merchant": "m",
+            "AI_analysis": "risk",
+        }
+        (jdir / "ai_extracted_channels.jsonl").write_text(
+            json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8",
+        )
+
+        open_calls = []
+        cfg = _cfg(platforms=["bili"], dash_merge_mode="只入库")
+        shell_calls, spawn_calls = [], []
+        runner = _make_runner(cfg, shell_calls, spawn_calls)
+
+        real_open = open
+
+        def tracking_open(path, mode="r", **kw):
+            if "extracted_channels.jsonl" in str(path) and "w" in mode:
+                open_calls.append((path, mode))
+            return real_open(path, mode, **kw)
+
+        dash_root = tmp_path / "SentinelDashboard"
+        with patch(f"{_MOD}.PROCESS_DIR", str(proc_root)), \
+             patch(f"{_MOD}.DASHBOARD_DIR", str(dash_root)), \
+             patch.object(runner, "_persist_leads_to_mongo"), \
+             patch(f"{_MOD}.os.makedirs"), \
+             patch("builtins.open", side_effect=tracking_open):
+            runner.run_merge_stage()
+        assert open_calls == [], "只入库模式不应以写模式打开 extracted_channels.jsonl"
 
     def test_full_pipeline_no_real_subprocesses(self):
         """全链路测试期间不应有任何真实子进程被创建。"""

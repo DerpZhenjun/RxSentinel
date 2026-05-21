@@ -16,7 +16,7 @@
         <div class="system-status">
           <span v-if="store.isFetching">数据同步中...</span>
           <span v-else-if="store.fetchError" class="error-text">{{ store.fetchError }}</span>
-          <span v-else>最近刷新：{{ store.lastRefreshAt || '初始化中' }}</span>
+          <span v-else>最近刷新：{{ store.lastRefreshAt || '初始化中' }} · {{ dataSourceHint }}</span>
         </div>
         <div class="panels-container">
           <div class="left-panel">
@@ -53,7 +53,7 @@
  * DataV 外框 + 左柱图 / 中流 / 右榜：`fetchAndParseData` 定时拉数；
  * `screenRef` 预留大屏缩放锚点。
  */
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useSentinelStore } from '../stores/sentinelStore';
 
 import TopIndicators from '../components/TopIndicators.vue';
@@ -63,6 +63,19 @@ import HighRiskRanking from '../components/HighRiskRanking.vue';
 
 const screenRef = ref(null);
 const store = useSentinelStore();
+
+const dataSourceHint = computed(() => {
+  switch (store.dataMode) {
+    case 'jsonl':
+      return '数据源：extracted_channels.jsonl（本地）';
+    case 'api':
+      return '数据源：Mongo API';
+    case 'error':
+      return '数据源：不可用';
+    default:
+      return `数据源：${store.dataMode || '—'}`;
+  }
+});
 
 const isFullscreen = ref(false);
 const toggleFullScreen = () => {

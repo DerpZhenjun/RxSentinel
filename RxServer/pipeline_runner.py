@@ -1,7 +1,7 @@
 """四阶段编排内核（无 Streamlit）：采集 → 清洗 → AI 抽取 → 合并推大屏。
 
 日志 / Toast / 进度条 / 子进程外壳一律回调注入，便于单测替桩与 CLI 复用。
-WebUI 仅组装 `PipelineConfig` 并调用 `PipelineRunner.run_full_pipeline()`。"""
+WebUI 仅组装 `PipelineConfig`（含 `dash_merge_mode` 阶段四策略）并调用 `PipelineRunner.run_full_pipeline()`。"""
 
 import json
 import logging
@@ -23,6 +23,10 @@ ROOT_DIR = os.path.dirname(_MODULE_DIR)
 CRAWLER_DIR = os.path.join(ROOT_DIR, "MediaCrawler")
 PROCESS_DIR = os.path.join(ROOT_DIR, "ProcessCdata")
 DASHBOARD_DIR = os.path.join(ROOT_DIR, "SentinelDashboard")
+
+if PROCESS_DIR not in sys.path:
+    sys.path.insert(0, PROCESS_DIR)
+from lead_noise_gate import is_obvious_noise_lead  # noqa: E402
 SENTINEL_API_FILE = os.path.join(_MODULE_DIR, "sentinel_api.py")
 VARIANT_LEXICON_FILE = os.path.join(PROCESS_DIR, "config", "variant_lexicon.json")
 
@@ -32,6 +36,13 @@ MONGO_COLLECTION = "sentinel_leads"
 
 STORAGE_OPTIONS = ["只入库", "只存入本地", "同时入库和存入本地"]
 READ_OPTIONS    = ["从本地读", "从数据库读"]
+
+# 阶段四：合并 AI 产出 → 大屏 JSONL / Mongo sentinel_leads
+DASH_MERGE_SKIP = "跳过（不入库、不写本地）"
+DASH_MERGE_OPTIONS = ["同时入库和存入本地", "只入库", "只存入本地", DASH_MERGE_SKIP]
+
+# 内置验证集（tests/generate_demo_verify_dataset.py）所覆盖的平台目录名
+DEMO_VERIFY_PLATFORMS = frozenset({"bili", "xhs", "zhihu", "dy", "douyin", "tieba", "weibo", "wb"})
 
 from pipeline_defaults import (  # noqa: E402
     DEFAULT_CHANNEL_WORDS,
@@ -336,9 +347,13 @@ class PipelineConfig:
     overwrite_crawler_plats: list[str] = field(default_factory=list)
     overwrite_filter_plats: list[str]  = field(default_factory=list)
     overwrite_ai_plats: list[str]      = field(default_factory=list)
-    overwrite_dash: bool = False
+    # True：仅阶段四合并 + 启动服务，跳过采集 / 清洗 / AI（无需 API Key）
+    dash_only: bool = False
+    # True：执行 tests/generate_demo_verify_dataset.py --install-to-process-data，跳过采集/清洗，直接 AI→合并
+    demo_verify_dataset: bool = False
+    demo_verify_backup_filtered: bool = False
 
-    auto_push: bool = True
+    dash_merge_mode: str = "同时入库和存入本地"
     dash_port: int = 5173
 
     clean_strictness: str = "标准"
@@ -462,6 +477,22 @@ class PipelineRunner:
 
         read_src = "db" if cfg.ai_read_mode == "从数据库读" else "local"
 
+        need_ai_plats = [
+            p for p in cfg.platforms
+            if not (has_ai_data(p) and p not in cfg.overwrite_ai_plats)
+        ]
+        if (
+            cfg.ai_platform == "DeepSeek (云端 API)"
+            and need_ai_plats
+            and not cfg.ds_api_key.strip()
+        ):
+            names = ", ".join(p.upper() for p in need_ai_plats)
+            self.log(
+                "❌ 致命错误：未填写 DeepSeek API Key！以下平台仍缺少本地 AI 结果或处于覆盖重跑："
+                f"{names}。任务中止。"
+            )
+            raise ValueError("Missing API Key")
+
         for plat in cfg.platforms:
             if has_ai_data(plat) and plat not in cfg.overwrite_ai_plats:
                 self.log(f"⏭️ [跳过] {plat.upper()} 平台 AI 提取结果已存在。")
@@ -471,9 +502,6 @@ class PipelineRunner:
                 save_prompt_template(cfg.custom_ai_prompt)
 
             if cfg.ai_platform == "DeepSeek (云端 API)":
-                if not cfg.ds_api_key.strip():
-                    self.log("❌ 致命错误：未填写 DeepSeek API Key！任务中止。")
-                    raise ValueError("Missing API Key")
                 self.log(f"🧠 [AI分析] 正在调用 DeepSeek ({cfg.active_model_name}) 提取 {plat.upper()} 交易线索...")
                 script = os.path.join(PROCESS_DIR, "deepseek_processor.py")
                 cmd = (
@@ -514,36 +542,76 @@ class PipelineRunner:
 
         self.toast("✅ 第三阶段：大模型侦听完毕！")
 
-    def _load_records_from_existing_merge(self, merged_file: str) -> list[dict]:
-        """大屏 JSONL 已存在且不覆盖：逐行解析 → `to_contract_doc`，跳过磁盘重写。"""
-        records: list[dict] = []
-        self.log("⏭️ [跳过] 前端聚合文件已存在，无需重新合并推送。")
-        with open(merged_file, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if to_contract_doc:
-                    records.append(to_contract_doc({
-                        "source_platform": data.get("source_platform", "UNKNOWN"),
-                        "video_title":     data.get("video_title", ""),
-                        "source_url":      data.get("source_url", ""),
-                        "original_content": data.get("original_content", ""),
-                        "platform":        normalize_platform_name(data.get("platform", "无")),
-                        "merchant":        data.get("merchant", "未指明"),
-                        "AI_analysis":     data.get("AI_analysis", "暂无研判"),
-                        "ingested_at":     int(time.time()),
-                    }))
-        return records
+    def _prepare_demo_verify_dataset(self) -> None:
+        """调用仓库内生成器，将 _demo_verify 样本安装到 ProcessCdata/data/<plat>/jsonl/。"""
+        cfg = self.config
+        script = os.path.join(ROOT_DIR, "tests", "generate_demo_verify_dataset.py")
+        if not os.path.isfile(script):
+            raise FileNotFoundError(f"未找到验证集脚本: {script}")
+        parts = [f'"{sys.executable}"', "-u", f'"{script}"', "--install-to-process-data"]
+        if cfg.demo_verify_backup_filtered:
+            parts.append("--backup-existing-filtered")
+        cmd = " ".join(parts)
+        self.log("\n============== [验证集] 生成并安装小规模 filtered_comments.jsonl ==============")
+        rc = self._shell_fn(cmd, ROOT_DIR)
+        if rc != 0:
+            raise RuntimeError(f"验证集脚本退出码 {rc}，请查看上方日志")
 
-    def _build_merged_file(self, merged_file: str) -> list[dict]:
-        """多平台 AI 产物指纹去重 → `public/extracted_channels.jsonl`，并行产出契约列表供入库。"""
-        records: list[dict] = []
+    def _ensure_demo_verify_ai_overwrite(self) -> None:
+        """验证集：仅对缺少本地 AI 产物的平台执行阶段三；已有结果则跳过（省 token）。
+
+        若需对某平台强制重跑，请在 WebUI「覆盖 AI 分析」中勾选该平台，或勾选「一键强制全量覆盖」。
+        """
+        cfg = self.config
+        extra = [p for p in cfg.platforms if p in DEMO_VERIFY_PLATFORMS]
+        if not extra:
+            self.log(
+                "⚠️ [验证集] 所选平台无可内置样本（需 bili / xhs / zhihu / dy / douyin / tieba）；"
+                "AI 阶段仍按常规则执行。"
+            )
+            return
+
+        will_run = [
+            p for p in extra
+            if p in cfg.overwrite_ai_plats or not has_ai_data(p)
+        ]
+        will_skip = [p for p in extra if p not in will_run]
+
+        if will_skip:
+            self.log(
+                "🧪 [验证集] 以下平台已有 ai_extracted_channels.jsonl，跳过 AI（不消耗 API token）："
+                + ", ".join(p.upper() for p in will_skip)
+                + "。如需重跑请在「覆盖 AI 分析」中勾选对应平台。"
+            )
+        if will_run:
+            self.log(
+                "🧪 [验证集] 以下平台将执行 AI："
+                + ", ".join(p.upper() for p in will_run)
+            )
+
+    def _merge_platform_ai_jsonl(
+        self,
+        write_path: str | None,
+        *,
+        collect_mongo: bool,
+    ) -> list[dict]:
+        """多平台 AI 指纹去重；可按需写 `extracted_channels.jsonl` / 组装 Mongo upsert 行。"""
+        mongo_records: list[dict] = []
         merged_count = 0
         seen: set[str] = set()
-        self.log("🔄 [聚合] 正在执行无损跨平台去重，打包至前端引擎...")
-        with open(merged_file, "w", encoding="utf-8") as outfile:
+
+        if write_path and collect_mongo:
+            label = "打包至前端并写入线索库"
+        elif write_path:
+            label = "打包至前端（仅本地 JSONL）"
+        elif collect_mongo:
+            label = "写入线索库（不写本地大屏文件）"
+        else:
+            label = "聚合"
+        self.log(f"🔄 [聚合] 正在执行无损跨平台去重，{label}...")
+
+        outfile = open(write_path, "w", encoding="utf-8") if write_path else None
+        try:
             for plat in self.config.platforms:
                 src = os.path.join(PROCESS_DIR, "data", plat, "jsonl", "ai_extracted_channels.jsonl")
                 if not os.path.exists(src):
@@ -557,24 +625,39 @@ class PipelineRunner:
                         fp = f"{plat}_{data.get('source_url','')}_{data.get('original_content','')}"
                         if fp in seen:
                             continue
+                        oc = str(data.get("original_content") or "")
+                        tpc = str(data.get("thread_parent_content") or "")
+                        if is_obvious_noise_lead(oc, tpc):
+                            logger.debug(
+                                "merge skip noise line platform=%s orig=%s…",
+                                plat,
+                                oc[:24],
+                            )
+                            continue
                         seen.add(fp)
                         data["source_platform"] = plat.upper()
                         data["platform"] = normalize_platform_name(data.get("platform", "无"))
-                        outfile.write(json.dumps(data, ensure_ascii=False) + "\n")
-                        if to_contract_doc:
-                            records.append(to_contract_doc({
+                        if outfile is not None:
+                            outfile.write(json.dumps(data, ensure_ascii=False) + "\n")
+                        if collect_mongo and to_contract_doc:
+                            mongo_records.append(to_contract_doc({
                                 "source_platform": plat.upper(),
                                 "video_title":     data.get("video_title", ""),
                                 "source_url":      data.get("source_url", ""),
                                 "original_content": data.get("original_content", ""),
+                                "thread_parent_content": data.get("thread_parent_content", ""),
                                 "platform":        normalize_platform_name(data.get("platform", "无")),
                                 "merchant":        data.get("merchant", "未指明"),
                                 "AI_analysis":     data.get("AI_analysis", "暂无研判"),
                                 "ingested_at":     int(time.time()),
                             }))
                         merged_count += 1
+        finally:
+            if outfile is not None:
+                outfile.close()
+
         self.log(f"✅ 精准提纯流转完毕：成功整合 {merged_count} 条跨平台独立线索。")
-        return records
+        return mongo_records
 
     def _persist_leads_to_mongo(self, mongo_records: list[dict]) -> None:
         """按 `source_platform` 整批删旧再 bulk upsert：`fingerprint` 幂等合并增量。"""
@@ -604,34 +687,56 @@ class PipelineRunner:
 
     def run_merge_stage(self) -> None:
         cfg = self.config
+        if cfg.dash_merge_mode == DASH_MERGE_SKIP:
+            return
+
+        mongo_wanted = cfg.dash_merge_mode in ("同时入库和存入本地", "只入库")
+        local_wanted = cfg.dash_merge_mode in ("同时入库和存入本地", "只存入本地")
+
         self._progress(90, "[阶段四] 跨平台去重与前端推流中...")
         self.log("\n============== [阶段四] 可视化数据流转 ==============")
-
-        if not cfg.auto_push:
-            return
 
         public_dir = os.path.join(DASHBOARD_DIR, "public")
         os.makedirs(public_dir, exist_ok=True)
         merged_file = os.path.join(public_dir, "extracted_channels.jsonl")
 
-        if os.path.exists(merged_file) and not cfg.overwrite_dash:
-            mongo_records = self._load_records_from_existing_merge(merged_file)
-        else:
-            mongo_records = self._build_merged_file(merged_file)
-
-        if mongo_records:
+        write_path = merged_file if local_wanted else None
+        mongo_records = self._merge_platform_ai_jsonl(
+            write_path,
+            collect_mongo=mongo_wanted,
+        )
+        if mongo_wanted and mongo_records:
             self._persist_leads_to_mongo(mongo_records)
 
     def run_full_pipeline(self) -> None:
         """跑满四阶段 → 延后清理本地中间件 → 拉起 FastAPI + Vite。"""
         self._deferred_cleanup = []
 
-        self.run_crawl_stage()
-        self.run_filter_stage()
-        self.run_ai_stage()
-        self.run_merge_stage()
+        if self.config.dash_only:
+            self.log(
+                "⚡ [捷径模式] 已跳过采集 / 清洗 / AI；仅执行大屏合并（若未选跳过）并启动服务。"
+            )
+            self._progress(85, "[阶段四] 大屏合并（捷径模式）...")
+            self.run_merge_stage()
+            self._progress(100, "系统部署完成！大屏就绪。")
+        elif self.config.demo_verify_dataset:
+            self.log(
+                "🧪 [验证集模式] 跳过采集与清洗；写入内置样本后执行 AI 与大屏合并。"
+            )
+            self._progress(12, "[验证集] 生成并安装测试样本...")
+            self._prepare_demo_verify_dataset()
+            self._ensure_demo_verify_ai_overwrite()
+            self._progress(55, "[阶段三] 大模型深度特征提取中...")
+            self.run_ai_stage()
+            self.run_merge_stage()
+            self._progress(100, "系统部署完成！大屏就绪。")
+        else:
+            self.run_crawl_stage()
+            self.run_filter_stage()
+            self.run_ai_stage()
+            self.run_merge_stage()
 
-        self._progress(100, "系统部署完成！大屏就绪。")
+            self._progress(100, "系统部署完成！大屏就绪。")
 
         for stage_name, plat_name in self._deferred_cleanup:
             cleanup_stage_local_files(stage_name, plat_name, self.log)

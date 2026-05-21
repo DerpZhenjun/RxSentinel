@@ -42,8 +42,42 @@ class TestBuildSourceUrlOtherPlatforms:
         assert apc.build_source_url("wb", "5001234567") == \
             "https://weibo.com/detail/5001234567"
 
+    def test_weibo_pipeline_alias(self):
+        assert apc.build_source_url("weibo", "5001234567") == \
+            "https://weibo.com/detail/5001234567"
+
+    def test_kuaishou_alias(self):
+        assert apc.build_source_url("kuaishou", "3xabc123") == \
+            "https://www.kuaishou.com/short-video/3xabc123"
+
+    def test_tieba(self):
+        assert apc.build_source_url("tieba", "8612345678") == \
+            "https://tieba.baidu.com/p/8612345678"
+
+    def test_zhihu_answer(self):
+        assert apc.build_source_url("zhihu", "987654321", {"content_type": "answer"}) == \
+            "https://www.zhihu.com/answer/987654321"
+
+    def test_zhihu_article(self):
+        assert apc.build_source_url("zhihu", "123", {"content_type": "article"}) == \
+            "https://zhuanlan.zhihu.com/p/123"
+
+    def test_zhihu_zvideo(self):
+        assert apc.build_source_url("zhihu", "456", {"content_type": "zvideo"}) == \
+            "https://www.zhihu.com/zvideo/456"
+
     def test_unknown_platform_returns_empty(self):
         assert apc.build_source_url("unknown_platform", "12345") == ""
+
+
+class TestResolveSourceUrl:
+    def test_prefers_row_landing_url(self):
+        row = {"note_id": "1", "note_url": "https://tieba.baidu.com/p/999999"}
+        assert apc.resolve_source_url("tieba", row) == "https://tieba.baidu.com/p/999999"
+
+    def test_falls_back_to_build_for_weibo(self):
+        row = {"note_id": "5001234567", "content": "x"}
+        assert apc.resolve_source_url("weibo", row) == "https://weibo.com/detail/5001234567"
 
 
 class TestExtractItemIdBili:
@@ -100,3 +134,58 @@ class TestExtractItemIdOtherPlatforms:
 
     def test_empty_data_returns_empty(self):
         assert apc.extract_item_id({}, "xhs") == ""
+
+
+class TestEnrichParentComments:
+    def test_bili_reply_gets_parent_text(self):
+        rows = [
+            {
+                "comment_id": "111",
+                "parent_comment_id": "0",
+                "content": "哪里能买到补佳乐",
+                "bvid": "BV1GJ411x7h7",
+            },
+            {
+                "comment_id": "222",
+                "parent_comment_id": "111",
+                "content": "私信",
+                "bvid": "BV1GJ411x7h7",
+            },
+        ]
+        apc.enrich_rows_with_parent_comments(rows, "bili")
+        assert rows[0]["thread_parent_content"] == ""
+        assert rows[1]["thread_parent_content"] == "哪里能买到补佳乐"
+
+    def test_different_videos_not_mixed(self):
+        rows = [
+            {"comment_id": "1", "parent_comment_id": "0", "content": "a", "bvid": "BV1GJ411x7h7"},
+            {"comment_id": "2", "parent_comment_id": "1", "content": "b", "bvid": "BV1xy4y167Au"},
+        ]
+        apc.enrich_rows_with_parent_comments(rows, "bili")
+        assert rows[1]["thread_parent_content"] == ""
+
+    def test_xhs_reply_gets_parent_text(self):
+        rows = [
+            {
+                "comment_id": "p1",
+                "parent_comment_id": "0",
+                "content": "父评正文",
+                "note_id": "demoNote1",
+            },
+            {
+                "comment_id": "c1",
+                "parent_comment_id": "p1",
+                "content": "子评",
+                "note_id": "demoNote1",
+            },
+        ]
+        apc.enrich_rows_with_parent_comments(rows, "xhs")
+        assert rows[1]["thread_parent_content"] == "父评正文"
+
+    def test_weibo_alias_reply_gets_parent_text(self):
+        rows = [
+            {"comment_id": "10", "parent_comment_id": "0", "content": "微博父", "note_id": "5001"},
+            {"comment_id": "11", "parent_comment_id": "10", "content": "子", "note_id": "5001"},
+        ]
+        apc.enrich_rows_with_parent_comments(rows, "weibo")
+        assert rows[1]["thread_parent_content"] == "微博父"

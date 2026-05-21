@@ -59,7 +59,7 @@ def _build_runner(cfg, tmp_path: Path, test_db, integration_mongo_uri: str, inte
     )
 
 
-def _make_config(platforms: list[str], overwrite_dash: bool = True):
+def _make_config(platforms: list[str], dash_merge_mode: str = "同时入库和存入本地"):
     from pipeline_runner import PipelineConfig
     return PipelineConfig(
         platforms=platforms,
@@ -78,8 +78,7 @@ def _make_config(platforms: list[str], overwrite_dash: bool = True):
         ds_api_key="",
         max_process=0,
         custom_ai_prompt="",
-        auto_push=True,
-        overwrite_dash=overwrite_dash,
+        dash_merge_mode=dash_merge_mode,
     )
 
 
@@ -88,12 +87,12 @@ class TestMergeStageWithRealMongo:
 
     def _run_merge(self, tmp_path, platforms, records_by_plat,
                    test_db, integration_mongo_uri, integration_db_name,
-                   overwrite_dash=True):
+                   dash_merge_mode: str = "同时入库和存入本地"):
         """写盘 → merge → 返回 `sentinel_leads` 集合句柄。"""
         for plat, records in records_by_plat.items():
             _write_ai_jsonl(tmp_path, plat, records)
 
-        cfg = _make_config(platforms, overwrite_dash=overwrite_dash)
+        cfg = _make_config(platforms, dash_merge_mode=dash_merge_mode)
         runner = _build_runner(cfg, tmp_path, test_db, integration_mongo_uri, integration_db_name)
 
         proc_dir = str(tmp_path / "ProcessCdata")
@@ -177,6 +176,34 @@ class TestMergeStageWithRealMongo:
         lines = [l for l in merged.read_text(encoding="utf-8").splitlines() if l.strip()]
         assert len(lines) == 2
 
+    def test_merge_local_only_writes_jsonl_not_mongo(self, test_db, integration_mongo_uri,
+                                                      integration_db_name, tmp_path):
+        """「只存入本地」应有 JSONL 且无 Mongo upsert。"""
+        self._run_merge(
+            tmp_path, ["bili"],
+            {"bili": [_make_ai_record(1)]},
+            test_db, integration_mongo_uri, integration_db_name,
+            dash_merge_mode="只存入本地",
+        )
+        assert test_db["sentinel_leads"].count_documents({}) == 0
+        merged = tmp_path / "SentinelDashboard" / "public" / "extracted_channels.jsonl"
+        assert merged.exists()
+        lines = [l for l in merged.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert len(lines) == 1
+
+    def test_merge_mongo_only_no_public_jsonl(self, test_db, integration_mongo_uri,
+                                              integration_db_name, tmp_path):
+        """「只入库」应 upsert Mongo 且不创建 public/extracted_channels.jsonl。"""
+        self._run_merge(
+            tmp_path, ["bili"],
+            {"bili": [_make_ai_record(1)]},
+            test_db, integration_mongo_uri, integration_db_name,
+            dash_merge_mode="只入库",
+        )
+        assert test_db["sentinel_leads"].count_documents({}) == 1
+        merged = tmp_path / "SentinelDashboard" / "public" / "extracted_channels.jsonl"
+        assert not merged.exists()
+
     def test_stale_records_cleared_before_upsert(self, test_db, integration_mongo_uri,
                                                    integration_db_name, tmp_path):
         """同平台的旧记录应在写入前被清除，防止历史 fingerprint 幽灵堆积。"""
@@ -193,7 +220,6 @@ class TestMergeStageWithRealMongo:
             tmp_path, ["bili"],
             {"bili": [_make_ai_record(99)]},
             test_db, integration_mongo_uri, integration_db_name,
-            overwrite_dash=True,
         )
         # 期望库里只剩本轮一条，排除 fingerprint 幽灵叠加
         assert col.count_documents({}) == 1

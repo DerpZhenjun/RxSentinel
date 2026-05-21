@@ -24,10 +24,12 @@ from pipeline_runner import (
     DEFAULT_DRUG_WORDS,
     DEFAULT_EMOJI_WORD_MAP,
     DEFAULT_HOMOPHONE_MAP,
+    DEMO_VERIFY_PLATFORMS,
     FIXED_OUTPUT_REQUIREMENTS,
     READ_OPTIONS,
     SENTINEL_API_FILE,
     STORAGE_OPTIONS,
+    DASH_MERGE_OPTIONS,
     ROOT_DIR,
     DASHBOARD_DIR,
     check_db_source_health,
@@ -50,6 +52,59 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+_PLATFORM_OPTIONS = ["xhs", "douyin", "kuaishou", "bili", "weibo", "zhihu", "tieba"]
+# 与 tests/generate_demo_verify_dataset.py 中 PLATFORMS 对齐（侧边栏用 douyin，数据目录另有 dy 别名）
+_DEMO_VERIFY_DEFAULT_PLATFORMS = ["bili", "xhs", "zhihu", "douyin", "tieba", "weibo"]
+
+# 验证集模式：避免 Mongo 与真实中间数据混杂（与 STORAGE_OPTIONS / READ_OPTIONS / DASH_MERGE_OPTIONS 字面量一致）
+_DEMO_VERIFY_STORE_LOCAL = STORAGE_OPTIONS[1]  # 只存入本地
+_DEMO_VERIFY_READ_LOCAL = READ_OPTIONS[0]  # 从本地读
+_DEMO_VERIFY_MERGE_LOCAL = DASH_MERGE_OPTIONS[2]  # 只存入本地
+
+
+def _sync_demo_verify_stage_prefs(demo_on: bool) -> None:
+    """勾选验证集时强制仅本地读写；取消勾选时恢复勾选前的 session 选项。"""
+    ss = st.session_state
+    defaults = [
+        ("crawler_storage_mode", STORAGE_OPTIONS[2]),
+        ("filter_storage_mode", STORAGE_OPTIONS[2]),
+        ("filter_read_mode", READ_OPTIONS[0]),
+        ("ai_storage_mode", STORAGE_OPTIONS[2]),
+        ("ai_read_mode", READ_OPTIONS[0]),
+        ("dash_merge_mode", DASH_MERGE_OPTIONS[0]),
+    ]
+    for key, val in defaults:
+        if key not in ss:
+            ss[key] = val
+
+    prev = ss.get("_prev_demo_verify_cb", False)
+    if demo_on and not prev:
+        ss["_bk_crawler_storage"] = ss["crawler_storage_mode"]
+        ss["_bk_filter_storage"] = ss["filter_storage_mode"]
+        ss["_bk_filter_read"] = ss["filter_read_mode"]
+        ss["_bk_ai_storage"] = ss["ai_storage_mode"]
+        ss["_bk_ai_read"] = ss["ai_read_mode"]
+        ss["_bk_dash_merge"] = ss["dash_merge_mode"]
+    elif not demo_on and prev:
+        ss["crawler_storage_mode"] = ss.get("_bk_crawler_storage", STORAGE_OPTIONS[2])
+        ss["filter_storage_mode"] = ss.get("_bk_filter_storage", STORAGE_OPTIONS[2])
+        ss["filter_read_mode"] = ss.get("_bk_filter_read", READ_OPTIONS[0])
+        ss["ai_storage_mode"] = ss.get("_bk_ai_storage", STORAGE_OPTIONS[2])
+        ss["ai_read_mode"] = ss.get("_bk_ai_read", READ_OPTIONS[0])
+        ss["dash_merge_mode"] = ss.get("_bk_dash_merge", DASH_MERGE_OPTIONS[0])
+
+    if demo_on:
+        ss["crawler_storage_mode"] = _DEMO_VERIFY_STORE_LOCAL
+        ss["filter_storage_mode"] = _DEMO_VERIFY_STORE_LOCAL
+        ss["filter_read_mode"] = _DEMO_VERIFY_READ_LOCAL
+        ss["ai_storage_mode"] = _DEMO_VERIFY_STORE_LOCAL
+        ss["ai_read_mode"] = _DEMO_VERIFY_READ_LOCAL
+        ss["dash_merge_mode"] = _DEMO_VERIFY_MERGE_LOCAL
+        # 验证集管线：安装样本 → AI → 合并；不能与「仅合并」捷径并存
+        ss["dash_only_cb"] = False
+
+    ss["_prev_demo_verify_cb"] = demo_on
 
 
 def _parse_kv(raw: str) -> dict[str, str]:
@@ -207,14 +262,39 @@ st.markdown('<div class="sub-title">全链路自动化管线：采集 ➔ 清洗
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ 全局参数配置")
-    platforms = st.multiselect(
-        "🎯 目标平台选择",
-        ["xhs", "douyin", "kuaishou", "bili", "weibo", "zhihu", "tieba"],
-        default=["bili"],
+    demo_verify_dataset = st.checkbox(
+        "使用内置验证测试数据集（跳过采集/清洗，安装后直接 AI → 大屏）",
+        value=False,
+        help=(
+            "勾选后下方「目标平台」默认选中 bili / xhs / zhihu / douyin / tieba / weibo，可自行增删。"
+            "启动时将安装合成 filtered_comments.jsonl；若各平台已有 ai_extracted_channels.jsonl，"
+            "则跳过 AI、不重复消耗 API token（除非在「覆盖 AI 分析」中勾选重跑）。"
+        ),
+        key="demo_verify_dataset_cb",
     )
+    demo_verify_backup_filtered = st.checkbox(
+        "安装验证集前备份现有 filtered_comments.jsonl（.bak_demo_verify）",
+        value=False,
+        disabled=not demo_verify_dataset,
+        key="demo_verify_backup_filtered_cb",
+    )
+    if demo_verify_dataset:
+        platforms = st.multiselect(
+            "🎯 目标平台选择",
+            _PLATFORM_OPTIONS,
+            default=_DEMO_VERIFY_DEFAULT_PLATFORMS,
+            key="platforms_ms_demo_verify",
+            help="验证集对上述六平台均含样本；另选平台若无 filtered 文件则 AI 阶段可能跳过。",
+        )
+    else:
+        platforms = st.multiselect(
+            "🎯 目标平台选择",
+            _PLATFORM_OPTIONS,
+            default=["bili"],
+            key="platforms_ms_normal",
+        )
     st.markdown("---")
     st.subheader("🛠️ 运行策略")
-    auto_push = st.toggle("自动推送至可视化大屏", value=True)
     st.markdown("**数据覆盖策略 (仅对已选平台生效)：**")
     overwrite_all = st.checkbox("🔄 一键强制全量覆盖 (推荐重跑时勾选)", value=False)
 
@@ -222,13 +302,13 @@ with st.sidebar:
         overwrite_crawler_plats = platforms
         overwrite_filter_plats  = platforms
         overwrite_ai_plats      = platforms
-        overwrite_dash          = True
     else:
         with st.expander("高级覆盖细则", expanded=False):
             overwrite_crawler_plats = st.multiselect("覆盖原始数据",  platforms, default=[])
             overwrite_filter_plats  = st.multiselect("覆盖清洗数据",  platforms, default=[])
             overwrite_ai_plats      = st.multiselect("覆盖AI分析",    platforms, default=[])
-            overwrite_dash          = st.checkbox("强制重新合并大屏数据", value=False)
+
+_sync_demo_verify_stage_prefs(demo_verify_dataset)
 
 # ---------------------------------------------------------------------------
 # 主体：模块一 — 数据采集
@@ -255,7 +335,12 @@ with st.container(border=True):
         height=110,
         help="建议按主题分组维护，使用英文逗号分隔；支持多行编辑。",
     )
-    crawler_storage_mode = st.selectbox("爬虫阶段存储策略", STORAGE_OPTIONS, index=2)
+    crawler_storage_mode = st.selectbox(
+        "爬虫阶段存储策略",
+        STORAGE_OPTIONS,
+        key="crawler_storage_mode",
+        disabled=demo_verify_dataset,
+    )
 
 # ---------------------------------------------------------------------------
 # 主体：模块二 — 提纯与 AI 研判
@@ -372,23 +457,85 @@ with st.container(border=True):
         st.success("✅ 对抗变体策略已写入 ProcessCdata/config/variant_lexicon.json")
 
     st.markdown("#### 2.2 阶段读写策略")
+    if demo_verify_dataset:
+        st.info(
+            "验证集模式已启用：**爬虫 / 清洗 / AI 存储与读取**及**大屏合并**固定为「只存入本地 + 从本地读」，"
+            "不向 Mongo 写入中间结果；取消勾选「使用内置验证测试数据集」后，下列选项会恢复为勾选前的配置。"
+            "**再次启动**：若本地已有各平台 `ai_extracted_channels.jsonl`，将**跳过 AI、不要求 API Key**；"
+            "仅重装样本并合并大屏。需要重跑 AI 时，在侧边栏「覆盖 AI 分析」勾选平台。"
+        )
     s1, r1 = st.columns(2, gap="large")
     with s1:
-        filter_storage_mode = st.selectbox("清洗阶段存储策略", STORAGE_OPTIONS, index=2)
+        filter_storage_mode = st.selectbox(
+            "清洗阶段存储策略",
+            STORAGE_OPTIONS,
+            key="filter_storage_mode",
+            disabled=demo_verify_dataset,
+        )
     with r1:
-        filter_read_mode    = st.selectbox("清洗阶段读取策略", READ_OPTIONS,    index=0)
+        filter_read_mode = st.selectbox(
+            "清洗阶段读取策略",
+            READ_OPTIONS,
+            key="filter_read_mode",
+            disabled=demo_verify_dataset,
+        )
     s2, r2 = st.columns(2, gap="large")
     with s2:
-        ai_storage_mode = st.selectbox("AI分析阶段存储策略", STORAGE_OPTIONS, index=2)
+        ai_storage_mode = st.selectbox(
+            "AI分析阶段存储策略",
+            STORAGE_OPTIONS,
+            key="ai_storage_mode",
+            disabled=demo_verify_dataset,
+        )
     with r2:
-        ai_read_mode    = st.selectbox("AI分析阶段读取策略", READ_OPTIONS,    index=0)
+        ai_read_mode = st.selectbox(
+            "AI分析阶段读取策略",
+            READ_OPTIONS,
+            key="ai_read_mode",
+            disabled=demo_verify_dataset,
+        )
+
+    st.markdown("#### 2.3 验证测试集（小规模 · 省 token）")
+    st.caption(
+        "在**左侧边栏**勾选「使用内置验证测试数据集」后，目标平台默认包含 "
+        "bili / xhs / zhihu / douyin / tieba / weibo；对照清单见 "
+        "`ProcessCdata/data/_demo_verify/demo_verify_expectations.json`。"
+    )
+    st.caption("内置样本涉及目录标识：" + ", ".join(sorted(DEMO_VERIFY_PLATFORMS)))
 
 # ---------------------------------------------------------------------------
 # 主体：模块三 — 大屏推流
 # ---------------------------------------------------------------------------
 st.markdown("### 3️⃣ 指挥中心推流 (SentinelDashboard)")
-st.caption("大屏推流与服务启动参数")
+st.caption("合并策略 + 大屏服务端口")
 with st.container(border=True):
+    dash_only = st.checkbox(
+        "仅合并并推流大屏（跳过采集、清洗、AI）",
+        key="dash_only_cb",
+        disabled=demo_verify_dataset,
+        help=(
+            "本地已有各平台 ai_extracted_channels.jsonl 时可用：直接进入阶段四并重新合并大屏，不要求 DeepSeek Key。"
+            "（勾选侧边栏「内置验证测试数据集」时不可用：验证集必须先安装样本并跑 AI。）"
+        ),
+    )
+    if demo_verify_dataset:
+        st.caption(
+            "验证集模式下已关闭「仅合并」捷径：启动后将安装样本 → 执行 AI → 再合并写入大屏。"
+            "合并仅写本地 JSONL、**不入 Mongo**；大屏默认仍请求 API，若与文件不一致，请在 "
+            "`SentinelDashboard/.env` 设置 `VITE_USE_JSONL_FIRST=true` 并重启 `npm run dev`，"
+            "或取消验证集后改用合并「同时入库和存入本地」。"
+        )
+    dash_merge_mode = st.selectbox(
+        "大屏合并输出策略",
+        DASH_MERGE_OPTIONS,
+        key="dash_merge_mode",
+        disabled=demo_verify_dataset,
+        help=(
+            "「同时」写入 public/extracted_channels.jsonl（离线兜底）并 upsert Mongo sentinel_leads（API 数据源）；"
+            "「只入库」仅更新数据库；「只存入本地」仅写 JSONL；「跳过」不执行合并与入库。"
+            "（勾选验证集时固定为「只存入本地」，避免入库干扰正式数据。）"
+        ),
+    )
     col6, col7 = st.columns([1, 3])
     with col6:
         dash_port = st.number_input("大屏前端端口", value=5173, step=1)
@@ -417,6 +564,13 @@ if stop_btn:
 if start_btn:
     if not platforms:
         st.error("操作受阻：请在左侧边栏选择至少一个目标平台。")
+        st.stop()
+    if demo_verify_dataset and dash_only:
+        st.error(
+            "**验证集与「仅合并并推流大屏」不能同时使用。**\n\n"
+            "- **跑内置验证集**：取消勾选「仅合并…」（验证集启动时会自动关掉该项），直接启动即可；管线会安装样本 → AI → 合并。\n"
+            "- **只想重新合并大屏**（已有各平台 `ai_extracted_channels.jsonl`）：请在侧边栏**取消**「使用内置验证测试数据集」，再勾选「仅合并…」。"
+        )
         st.stop()
 
     st.markdown("### 📡 指挥中心日志终端")
@@ -457,8 +611,10 @@ if start_btn:
         overwrite_crawler_plats = list(overwrite_crawler_plats),
         overwrite_filter_plats  = list(overwrite_filter_plats),
         overwrite_ai_plats      = list(overwrite_ai_plats),
-        overwrite_dash          = overwrite_dash,
-        auto_push               = auto_push,
+        dash_only               = dash_only,
+        demo_verify_dataset     = demo_verify_dataset,
+        demo_verify_backup_filtered = demo_verify_backup_filtered,
+        dash_merge_mode         = dash_merge_mode,
         dash_port               = int(dash_port),
         clean_strictness        = clean_strictness,
     )

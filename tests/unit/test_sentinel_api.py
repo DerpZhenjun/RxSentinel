@@ -184,6 +184,7 @@ def test_schema_self_check_endpoint():
     assert body["schema_version"] == "2.0.0"
     assert body["contract"] == "sentinel_leads.v2"
     assert "fields" in body and "source_url" in body["fields"]
+    assert "thread_parent_content" in body["fields"]
     assert body["compatibility"]["legacy_read_upgrade"] is True
 
 

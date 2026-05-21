@@ -85,24 +85,27 @@ describe('IntelligenceFeed', () => {
     expect(storeState.loadMoreData).not.toHaveBeenCalled();
   });
 
-  it('scrolls to active intel index on trigger and flashes target', async () => {
-    vi.useFakeTimers();
+  it('scrolls to active intel index on trigger and applies focus styles', async () => {
     storeState.intelData = Array.from({ length: 40 }, (_, i) => makeItem(i));
     const wrapper = mount(IntelligenceFeed);
     const scrollArea = wrapper.find('.scroll-area').element;
     Object.defineProperty(scrollArea, 'clientHeight', { value: 600, configurable: true });
-    scrollArea.scrollTo = vi.fn();
+    Object.defineProperty(scrollArea, 'scrollHeight', { value: 20000, configurable: true });
+    let scrollTopVal = 0;
+    Object.defineProperty(scrollArea, 'scrollTop', {
+      get: () => scrollTopVal,
+      set: (v) => { scrollTopVal = v; },
+      configurable: true,
+    });
+    await nextTick();
 
     storeState.activeIntelIndex = 10;
     storeState.scrollTrigger += 1;
     await nextTick();
-
-    expect(scrollArea.scrollTo).toHaveBeenCalledTimes(1);
-    expect(wrapper.find('.flash-target').exists()).toBe(true);
-
-    vi.advanceTimersByTime(2600);
     await nextTick();
-    expect(wrapper.find('.flash-target').exists()).toBe(false);
-    vi.useRealTimers();
+    await new Promise((r) => setTimeout(r, 80));
+
+    expect(wrapper.find('#feed-item-10.is-focused').exists()).toBe(true);
+    expect(wrapper.find('#feed-item-10').exists()).toBe(true);
   });
 });

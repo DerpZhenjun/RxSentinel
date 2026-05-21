@@ -1,10 +1,21 @@
-"""大屏读接口：外链服务端探活代理、分页 leads、聚合 stats；读路径顺带契约回填（无序 bulk）。"""
+"""大屏读接口：外链服务端探活代理、分页 leads、聚合 stats；读路径顺带契约回填（无序 bulk）。
+
+Mongo 中可能残留历史垃圾行：读列表时对每条套用 `is_obvious_noise_lead`，与合并写 JSONL 规则对齐，
+避免「本地 JSONL 已过滤、网关仍读库」时大屏与文件不一致。"""
 
 import asyncio
+import os
+import sys
 import time
 from typing import Any
 
 import requests as _requests
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROCESS_DIR = os.path.join(_REPO_ROOT, "ProcessCdata")
+if _PROCESS_DIR not in sys.path:
+    sys.path.insert(0, _PROCESS_DIR)
+from lead_noise_gate import is_obvious_noise_lead  # noqa: E402
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.routing import APIRouter
 from pymongo import DESCENDING, UpdateOne
@@ -23,6 +34,7 @@ class LeadItem(BaseModel):
     video_title: str
     source_url: str
     original_content: str
+    thread_parent_content: str = ""
     platform: str
     merchant: str
     AI_analysis: str
@@ -135,6 +147,11 @@ def _dedupe_stages(base_query: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _visible_after_noise_gate(it: LeadItem) -> bool:
+    """False → 不在大屏列表展示（与 pipeline merge / extracted_channels.jsonl 口径一致）。"""
+    return not is_obvious_noise_lead(it.original_content, it.thread_parent_content)
+
+
 def _normalize_doc(doc: dict[str, Any]) -> LeadItem:
     return LeadItem(
         schema_version=doc.get("schema_version", "legacy"),
@@ -142,6 +159,7 @@ def _normalize_doc(doc: dict[str, Any]) -> LeadItem:
         video_title=coalesce_video_title(doc),
         source_url=doc.get("source_url", ""),
         original_content=doc.get("original_content", ""),
+        thread_parent_content=doc.get("thread_parent_content", "") or "",
         platform=doc.get("platform", "无"),
         merchant=doc.get("merchant", "未指明"),
         AI_analysis=doc.get("AI_analysis", "暂无研判"),
@@ -220,6 +238,7 @@ async def get_leads(
             col.bulk_write(fix_ops, ordered=False)
 
         items = [_normalize_doc(d) for d in docs]
+        items = [it for it in items if _visible_after_noise_gate(it)]
         return LeadListResponse(
             items=items,
             count=len(items),
@@ -227,7 +246,7 @@ async def get_leads(
                 page=page,
                 page_size=page_size,
                 total=total,
-                has_next=(skip + len(items)) < total,
+                has_next=(skip + len(docs)) < total,
             ),
         )
     except PyMongoError as exc:

@@ -278,11 +278,19 @@ class TestToContractDoc:
         doc = to_contract_doc(self._raw())
         required = [
             "schema_version", "contract", "fingerprint", "source_platform",
-            "video_title", "source_url", "original_content", "platform",
-            "merchant", "AI_analysis", "ingested_at",
+            "video_title", "source_url", "original_content", "thread_parent_content",
+            "platform", "merchant", "AI_analysis", "ingested_at",
         ]
         for field in required:
             assert field in doc, f"missing field: {field}"
+
+    def test_thread_parent_defaults_empty(self):
+        doc = to_contract_doc(self._raw())
+        assert doc["thread_parent_content"] == ""
+
+    def test_thread_parent_preserved(self):
+        doc = to_contract_doc(self._raw(thread_parent_content="父评一句"))
+        assert doc["thread_parent_content"] == "父评一句"
 
 
 class TestUpgradeExistingDoc:

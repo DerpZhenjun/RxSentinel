@@ -8,7 +8,8 @@
 #
 # 与 requirements.txt 的关系：
 #   本文件是 requirements.txt 的轻量子集，故意排除了运行时中的重型依赖
-#   （streamlit、matplotlib、tqdm、openai、ollama 等），以加快 CI 安装速度。
+#   （streamlit、matplotlib、openai、ollama 等），以加快 CI 安装速度。
+#   tqdm 保留：`ai_processor_common.run_platform_pipeline` 与 e2e 管线测试依赖。
 #
 #   ┌─────────────────────────────────────────────────────┐
 #   │  只想运行测试          → 仅安装本文件               │
@@ -27,6 +28,7 @@ pydantic>=2.0
 python-dotenv>=1.0
 requests>=2.31
 slowapi>=0.1.9
+tqdm>=4.66           # AI 流水线进度条；tests/e2e/test_pipeline_output.py
 
 # --- 测试工具 ---
 pytest>=7.4

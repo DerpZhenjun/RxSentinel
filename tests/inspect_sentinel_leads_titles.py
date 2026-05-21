@@ -1,7 +1,7 @@
 """一次性检查 sentinel_leads 中标题相关字段分布（用于排查大屏「标题未收录」）。
 
 用法（仓库根目录）：
-    python tools/inspect_sentinel_leads_titles.py
+    python tests/inspect_sentinel_leads_titles.py
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 URI = os.getenv("MONGODB_URI", "mongodb://127.0.0.1:27017")

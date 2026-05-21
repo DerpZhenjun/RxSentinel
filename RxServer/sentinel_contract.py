@@ -22,6 +22,7 @@ class LeadContract(BaseModel):
     video_title: str
     source_url: str
     original_content: str
+    thread_parent_content: str = ""
     platform: str
     merchant: str
     AI_analysis: str
@@ -119,6 +120,7 @@ def to_contract_doc(raw: dict[str, Any], now_ts: int | None = None) -> dict[str,
         "video_title": coalesce_video_title(raw),
         "source_url": source_url,
         "original_content": original_content,
+        "thread_parent_content": str(raw.get("thread_parent_content") or "").strip(),
         "platform": normalize_platform_name(str(raw.get("platform") or "无")),
         "merchant": str(raw.get("merchant") or "未指明").strip() or "未指明",
         "AI_analysis": str(raw.get("AI_analysis") or "暂无研判").strip() or "暂无研判",

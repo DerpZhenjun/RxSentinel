@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 import matplotlib.pyplot as plt
 from pymongo import MongoClient
 
+from lead_noise_gate import should_suppress_lead
+from thread_row_utils import (
+    build_source_url,
+    enrich_rows_with_parent_comments,
+    extract_item_id,
+    first_landing_url_from_row,
+    resolve_source_url,
+    thread_scope_key,
+)
+
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -34,18 +44,26 @@ DEFAULT_AI_PROMPT_BODY = """
 
 【提取铁律与红线】（违反任何一条，判定为无效）
 1. 必须是真实的“买卖/供给/引流”动作。求助、吃瓜、纯用药记录均判定为无效。
-2. 🎯【实体提取严格限制】：只有当评论中明确出现了具体的店铺名、搜索暗号，或者评论者本人亲自在引流（如“私我”、“我有药”）时，才能提取为 merchant。泛指平台时 merchant 填“无”。
+2. 🎯【实体提取严格限制】：merchant 必须有「可落地的卖方或检索线索」。泛指平台而无店铺/暗号时 merchant 填“无”。⚠️ 孤立的一句「私我」「拉我」「进群」「还有群吗」「拉我进群」「加我」「滴滴」等**不算**有效引流：除非父评或本条另有具体药物、店铺名、搜索暗号、外链或明确的代购/供货描述，否则整条 **is_valid_trade 必须为 false**，禁止输出「【个人引流】…」糊弄过关。
 3. 🛑【结合语境防误杀（极度重要）】：必须严格结合《所属视频/帖子标题》进行交叉验证！
    - ❌ 如果视频标题是关于真正的食品/零食（如“猪油糖”、“手工制作”、“农村生活”等），评论中的“糖”就是字面意思的糖果，绝对不是激素处方药！直接判定为无效！
    - ❌ 只有视频主题与跨性别、医药、边缘亚文化相关，或者上下文明示了买药行为时，才可将“糖”认定为黑产。
 4. 🛑【无上下文的 @ 拒绝提取（极度重要）】：如果评论仅仅是“@某人”（例如：“@威”、“@じ★ve絕戀”、“@张三 看这个”），且没有附带任何明确的买卖、引流或求药暗号文字，一律判定为无效（is_valid_trade: false）。绝不能仅仅因为 @ 了某个人就认定为引流！
+5. 🛑【楼中楼必须读父评（极度重要）】：若提供了「被回复的评论」，必须把父评与本条一起看；仅当父评+本条共同指向药物/HRT 灰产交易或引流时才可判有效。若本条只是“私信”“某宝捏”等承接语而父评仅为闲聊、聊色、游戏、梗图，则一律无效。
+6. 🛑【无 actionable 线索 = 无效】：评论（含父评）必须能回答「具体怎么找到卖药的/在哪下单/搜什么暗号」至少一项。若仅为泛泛语气（如「某宝有」「PDD 买仿制药」「切药器」）、纯病友闲聊、情绪附和、或只剩平台大类而无店铺/暗号/确定性卖家，**一律 is_valid_trade: false**。正规 OTC 经验分享、显而易见可自行网购的路径，不是你要抓的灰产情报。
+7. 🛑【问号索取无下文】：仅「哪家店」「怎么买」「求链接」且对方未在本条或父评给出可检索线索的，若本条仍无补充，判无效。
+8. 🛑【楼中楼双空话】：父评为「私我/滴滴/进群」等承接语，本条仅为「拉我/我也想进群/还有群吗」及 emoji，**双方均无**店铺名、链接、暗号、检索词的 → **必须 false**；不得拆成两条「有效」糊弄。
+9. 🛑【私信上下文未完成】：仅「私信你了」「回复我」「推链接好」「给个微信」而无具体卖方、商品检索路径的 → **false**。「私信截图」「又给吞了」等闲聊 → **false**。
+10. 🛑【处方药 OTC 病友指路】：仅讨论保法止/非那/切药器/仿制药在哪买、拼多多某宝泛指，**无**具体灰产卖家或引流暗号的 → **false**（正规渠道自救经验不是情报）。
+11. 🛑【生物黑客/加群邀约】：「来我微信群」「主页得出」「看下我主页」等泛邀约且无药物交易线索 → **false**。
 """
 
 FIXED_CONTEXT_BLOCK = """
 【上下文数据】
 所属视频/帖子标题："{video_title}"
 评论者昵称："{author}"
-评论原文："{comment_text}"
+被回复的评论（楼中楼时为上一层用户评论全文；顶层评论则无此项）："{parent_comment}"
+本条评论原文："{comment_text}"
 """
 
 FIXED_OUTPUT_REQUIREMENTS = """
@@ -57,7 +75,7 @@ FIXED_OUTPUT_REQUIREMENTS = """
   "reasoning_step": "简短思考：结合视频标题，这是真正的买药还是聊普通的食物？如果是纯粹的@好友吃瓜，直接判定无效。",
   "is_valid_trade": true,
   "platform": "标准平台名称（如闲鱼、本站私信。无则填'无'）",
-  "merchant": "具体的店铺名或暗号。💡如是本人引流，输出：'【个人引流】{author}'。如无，填'无'",
+  "merchant": "具体的店铺名或暗号。仅在满足铁律第2条（非空话承接、有可落地线索）时，方可输出「【个人引流】{author}」。否则整条应判无效而非勉强填 merchant。无则填'无'",
   "AI_analysis": "一句话提炼具体的购买手段或引流方式",
   "confidence_score": 9
 }}
@@ -99,51 +117,6 @@ def save_prompt_template(prompt_body: str):
     payload = {"prompt_body": prompt_body}
     with open(AI_PROMPT_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def build_source_url(platform: str, item_id: str) -> str:
-    if not item_id:
-        return ""
-    if platform == "bili":
-        if item_id.startswith("BV") or item_id.startswith("av"):
-            return f"https://www.bilibili.com/video/{item_id}"
-        # 爬虫 numeric avid：勿用位数推断稿件/动态类型。
-        if item_id.isdigit():
-            return f"https://www.bilibili.com/video/av{item_id}"
-        # 其余形态原样拼接，交由上游避免脏 ID。
-        return f"https://www.bilibili.com/video/{item_id}"
-    if platform in ["dy", "douyin"]:
-        return f"https://www.douyin.com/video/{item_id}"
-    if platform == "xhs":
-        return f"https://www.xiaohongshu.com/explore/{item_id}"
-    if platform == "wb":
-        return f"https://weibo.com/detail/{item_id}"
-    if platform in ["ks", "kuaishou"]:
-        return f"https://www.kuaishou.com/short-video/{item_id}"
-    return ""
-
-
-def extract_item_id(data: dict, platform: str) -> str:
-    if platform == "bili":
-        # 合法 BV：前缀 + 最小长度；其余伪 BV 丢弃。
-        bvid = str(data.get("bvid") or "").strip()
-        if bvid.startswith("BV") and len(bvid) >= 10:
-            return bvid
-        # avid：仅接受正整数形态的 `video_id`，拒绝混入字母或零。
-        video_id = str(data.get("video_id") or "").strip()
-        if video_id.isdigit() and int(video_id) > 0:
-            return video_id
-        return ""
-    return str(
-        data.get("note_id")
-        or data.get("aweme_id")
-        or data.get("bvid")
-        or data.get("video_id")
-        or data.get("photo_id")
-        or data.get("mid")
-        or data.get("content_id")
-        or ""
-    ).strip()
 
 
 def platform_aliases(platform):
@@ -291,11 +264,23 @@ def run_platform_pipeline(
     from tqdm import tqdm  # 延迟 import，规避与 tqdm 的 import 环
 
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    total_lines = len(input_lines)
     extracted_count = 0
     error_count = 0
     platform_counter = Counter()
     pbar = None
+
+    parsed_rows: list[dict] = []
+    for line in input_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed_rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            logger.warning("[%s] 跳过非法 JSON 行", platform.upper())
+    # 全平台统一：同一批内按 parent_comment_id 填充 thread_parent_content（见 thread_row_utils）
+    enrich_rows_with_parent_comments(parsed_rows, platform)
+    total_lines = len(parsed_rows)
 
     with open(log_file, 'a', encoding='utf-8') as f_log:
         write_log_header(f_log, platform, engine, model_name)
@@ -305,10 +290,9 @@ def run_platform_pipeline(
                 pbar = tqdm(total=total_lines, desc=f"[{platform.upper()}] {engine}分析", unit="条")
                 processed_lines = 0
 
-                for line in input_lines:
+                for data in parsed_rows:
                     processed_lines += 1
                     try:
-                        data = json.loads(line.strip())
                         comment_text = data.get("content", data.get("original_content", ""))
                         # 不能写 get("injected_video_title", "未提供标题")：键存在且为 "" 时不会用默认，导致写库 video_title 为空。
                         picked = ""
@@ -325,9 +309,14 @@ def run_platform_pipeline(
                             continue
 
                         pbar.set_postfix_str(f"{comment_text[:20].replace(chr(10), ' ')}...", refresh=False)
+                        parent_raw = str(data.get("thread_parent_content") or "").strip()
+                        parent_for_prompt = (
+                            parent_raw if parent_raw else "（无：顶层评论，或父评未收录于本批数据）"
+                        )
                         formatted_prompt = prompt_template.format(
                             video_title=prompt_title,
                             author=author_name,
+                            parent_comment=parent_for_prompt,
                             comment_text=comment_text,
                         )
                         ai_result = call_llm(formatted_prompt)
@@ -335,20 +324,28 @@ def run_platform_pipeline(
                         is_valid = ai_result.get("is_valid_trade", False)
 
                         if is_valid and platform_name not in ["无", "未知", ""]:
+                            if should_suppress_lead(data, ai_result):
+                                tqdm.write(
+                                    "⚪ [硬闸丢弃] 空话/无双承接/OTC 泛指等，未写入输出（避免大屏噪声）"
+                                )
+                                pbar.update(1)
+                                if delay > 0:
+                                    time.sleep(delay)
+                                continue
                             extracted_count += 1
                             merchant_name = ai_result.get("merchant", "无")
                             analysis_detail = ai_result.get("AI_analysis", "无")
                             original_content = ai_result.get("original_content", comment_text)
                             platform_counter[platform_name] += 1
 
-                            item_id = extract_item_id(data, platform)
-                            source_url = build_source_url(platform, item_id) if item_id else ""
+                            source_url = resolve_source_url(platform, data)
 
                             final_record = {
                                 "source_platform": platform,
                                 "video_title": picked,
                                 "source_url": source_url,
                                 "original_content": original_content,
+                                "thread_parent_content": str(data.get("thread_parent_content") or "").strip(),
                                 "platform": platform_name,
                                 "merchant": merchant_name,
                                 "AI_analysis": analysis_detail,

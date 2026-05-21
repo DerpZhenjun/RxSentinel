@@ -7,10 +7,25 @@ import { computed, reactive, ref } from 'vue';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
+/** `VITE_USE_JSONL_FIRST=true`：验证集 /「只存本地」合并不写 Mongo 时，大屏读 `public/extracted_channels.jsonl`。 */
+const _envTruthy = (v) => {
+  const s = String(v ?? '').trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes';
+};
+const _preferJsonlFirst = _envTruthy(import.meta.env.VITE_USE_JSONL_FIRST);
+
 /** 密钥空 → 请求不带 Bearer；联调零配置与服务端短路放行对齐 */
 const _API_SECRET = (import.meta.env.VITE_API_SECRET || '').trim();
 const _getAuthHeaders = () =>
   _API_SECRET ? { Authorization: `Bearer ${_API_SECRET}` } : {};
+
+/** B 站常见「回复 @昵称 ：正文」前缀：拆出对象昵称与本条正文（父评全文仍依赖后端 thread_parent_content）。 */
+const parseReplyAtPrefix = (text) => {
+  const s = String(text || '').trim();
+  const m = s.match(/^回复\s*@\s*([^:：\n]+?)\s*[:：]\s*/);
+  if (!m) return { replyTargetNick: '', body: s };
+  return { replyTargetNick: (m[1] || '').trim(), body: s.slice(m[0].length).trim() || s };
+};
 
 export const useSentinelStore = defineStore('sentinel', () => {
   const intelData = ref([]);
@@ -29,9 +44,9 @@ export const useSentinelStore = defineStore('sentinel', () => {
   const isLoadingMore = ref(false);
   const fetchError = ref('');
   const lastRefreshAt = ref('');
-  const useMongoApi = ref(true);
+  const useMongoApi = ref(!_preferJsonlFirst);
   /** `api` | `jsonl` | `error`：网关可用 / 静态兜底 / 双通道皆挂 */
-  const dataMode = ref('api');
+  const dataMode = ref(_preferJsonlFirst ? 'jsonl' : 'api');
 
   const page = ref(1);
   const pageSize = ref(500);
@@ -102,7 +117,7 @@ export const useSentinelStore = defineStore('sentinel', () => {
     return String(platform || '无').trim() || '无';
   };
 
-  /** 脏串里的哔哩稿件号 / 最后一截 http(s)；Markdown 断裂、`/video/` 空壳丢弃 */
+  /** 各平台脏串归一：哔哩 BV/av/动态、抖音/小红书/快手/微博/贴吧/知乎常用形态，否则取末段 http(s)；Markdown 断裂丢弃 */
   const normalizeSourceUrl = (rawUrl) => {
     const value = String(rawUrl || '').trim();
     if (!value) return '';
@@ -117,6 +132,37 @@ export const useSentinelStore = defineStore('sentinel', () => {
 
       const dynamicMatch = value.match(/\b\d{12,}\b/);
       if (dynamicMatch) return `https://t.bilibili.com/${dynamicMatch[0]}`;
+    }
+
+    if (lower.includes('douyin.com') || lower.includes('iesdouyin.com')) {
+      const vm = value.match(/\/video\/(\d+)/);
+      if (vm) return `https://www.douyin.com/video/${vm[1]}`;
+    }
+    if (lower.includes('xiaohongshu.com') || lower.includes('xhslink.com')) {
+      const em = value.match(/\/explore\/([0-9a-zA-Z]+)/);
+      if (em) return `https://www.xiaohongshu.com/explore/${em[1]}`;
+      const dm = value.match(/discovery\/item\/([0-9a-zA-Z]+)/);
+      if (dm) return `https://www.xiaohongshu.com/explore/${dm[1]}`;
+    }
+    if (lower.includes('kuaishou.com')) {
+      const km = value.match(/short-video\/([^/?\s#]+)/);
+      if (km) return `https://www.kuaishou.com/short-video/${km[1]}`;
+    }
+    if (lower.includes('weibo.com') || lower.includes('weibo.cn')) {
+      const wm = value.match(/\/detail\/(\d+)/);
+      if (wm) return `https://weibo.com/detail/${wm[1]}`;
+    }
+    if (lower.includes('tieba.baidu.com')) {
+      const tm = value.match(/\/p\/(\d+)/);
+      if (tm) return `https://tieba.baidu.com/p/${tm[1]}`;
+    }
+    if (lower.includes('zhihu.com')) {
+      const zv = value.match(/zhihu\.com\/zvideo\/(\d+)/i);
+      if (zv) return `https://www.zhihu.com/zvideo/${zv[1]}`;
+      const zp = value.match(/zhuanlan\.zhihu\.com\/p\/(\d+)/i);
+      if (zp) return `https://zhuanlan.zhihu.com/p/${zp[1]}`;
+      const ans = value.match(/zhihu\.com\/answer\/(\d+)/i);
+      if (ans) return `https://www.zhihu.com/answer/${ans[1]}`;
     }
 
     const urlMatches = value.match(/https?:\/\/[^\s)]+/g);
@@ -134,6 +180,36 @@ export const useSentinelStore = defineStore('sentinel', () => {
   const normalizeSourceTitle = (item) =>
     String(item.video_title || item.injected_video_title || '').trim();
 
+  const _normLabel = (s) => String(s || '').trim();
+
+  /** 榜单实体名与卡片 merchant / 正文 / 研判 对齐（merchant 常为【个人引流】ID，正文才有 SugarLane 等） */
+  const _indicesForMerchantFocus = (merchantName, platformName) => {
+    const name = _normLabel(merchantName);
+    const plat = platformName ? normalizePlatformName(platformName) : '';
+    const exactMerchant = [];
+    const textHit = [];
+
+    intelData.value.forEach((item, idx) => {
+      if (_normLabel(item.merchant) === name) {
+        exactMerchant.push(idx);
+        return;
+      }
+      const hay = `${item.merchant} ${item.content} ${item.analysis}`;
+      if (name && hay.includes(name)) textHit.push(idx);
+    });
+
+    let pool = exactMerchant.length ? exactMerchant : textHit;
+    if (plat && pool.length) {
+      const onPlat = pool.filter((idx) => intelData.value[idx].platform === plat);
+      if (onPlat.length) {
+        pool = onPlat;
+      } else if (exactMerchant.length > 1) {
+        pool = exactMerchant;
+      }
+    }
+    return [...pool].sort((a, b) => a - b);
+  };
+
   /** 榜单点击：`clickCycleMap` 轮询同源实体对应的多条卡片 */
   const focusMerchant = (merchantName, platformName) => {
     if (!merchantName) return;
@@ -141,18 +217,16 @@ export const useSentinelStore = defineStore('sentinel', () => {
     activeMerchant.value = merchantName;
     activePlatform.value = platformName || null;
 
-    if (clickCycleMap.value[merchantName] === undefined) {
-      clickCycleMap.value[merchantName] = 0;
+    const cycleKey = `${merchantName}::${platformName || '*'}`;
+    if (clickCycleMap.value[cycleKey] === undefined) {
+      clickCycleMap.value[cycleKey] = 0;
     } else {
-      clickCycleMap.value[merchantName] += 1;
+      clickCycleMap.value[cycleKey] += 1;
     }
 
-    const matchingIndices = [];
-    intelData.value.forEach((item, idx) => {
-      if (item.merchant === merchantName) matchingIndices.push(idx);
-    });
+    const matchingIndices = _indicesForMerchantFocus(merchantName, platformName);
     if (matchingIndices.length > 0) {
-      const cycleIndex = clickCycleMap.value[merchantName] || 0;
+      const cycleIndex = clickCycleMap.value[cycleKey] || 0;
       activeIntelIndex.value = matchingIndices[cycleIndex % matchingIndices.length];
     } else {
       activeIntelIndex.value = -1;
@@ -161,15 +235,27 @@ export const useSentinelStore = defineStore('sentinel', () => {
     scrollTrigger.value++;
   };
 
-  const mapToIntelItem = (item) => ({
-    platform: normalizePlatformName(item.platform),
-    platformType: getTagColor(normalizePlatformName(item.platform)),
-    merchant: item.merchant || '未指明',
-    content: item.original_content || '无原文',
-    analysis: item.AI_analysis || '暂无研判',
-    source_url: normalizeSourceUrl(item.source_url),
-    video_title: normalizeSourceTitle(item)
-  });
+  const mapToIntelItem = (item) => {
+    const rawContent = String(item.original_content || '').trim();
+    const threadParent = String(item.thread_parent_content || '').trim();
+    const { replyTargetNick, body } = parseReplyAtPrefix(rawContent);
+    const displayBody =
+      replyTargetNick && body ? body : rawContent || '无原文';
+
+    const sourceUrl = normalizeSourceUrl(item.source_url);
+    return {
+      leadKey: `${sourceUrl}|${rawContent}`.slice(0, 240),
+      platform: normalizePlatformName(item.platform),
+      platformType: getTagColor(normalizePlatformName(item.platform)),
+      merchant: item.merchant || '未指明',
+      threadParent,
+      replyTargetNick: threadParent ? '' : replyTargetNick,
+      content: displayBody || '无原文',
+      analysis: item.AI_analysis || '暂无研判',
+      source_url: sourceUrl,
+      video_title: normalizeSourceTitle(item)
+    };
+  };
 
   /** `intelData` 变后全量派生：平台计数、高危榜、顶部 KPI */
   const rebuildDerivedData = () => {
