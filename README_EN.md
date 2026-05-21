@@ -242,4 +242,4 @@ Notes:
 
 ## Disclaimer
 
-This project is for learning and communication only; crawling and data processing must comply with laws and platform terms. RxSentinel uses the implementation ideas and code subtree from **[NanmiCoder / MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)**, **thank you again to the original authors for their open-source contributions**; **for complete content on crawling, copyright notices, and disclaimers, follow the official MediaCrawler repository documentation and users bear their own responsibilities**.
+This project is for learning and communication only; crawling and data processing must comply with laws and platform terms. RxSentinel uses the implementation ideas and code from **[NanmiCoder / MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)**, **thank you again to the original authors for their open-source contributions**; **for complete content on crawling, copyright notices, and disclaimers, follow the official MediaCrawler repository documentation and users bear their own responsibilities**.
