@@ -227,30 +227,6 @@ Notes:
 - If a platform already has `ai_extracted_channels.jsonl`, **AI is skipped** to save API tokens; to re-run AI, select that platform under overwrite options for AI analysis  
 - The dashboard requests the Mongo API by default; if it does not match local merged JSONL, set `VITE_USE_JSONL_FIRST=true` in `SentinelDashboard/.env` and restart the dashboard dev server
 
-### Static demo (GitHub Pages)
-
-For an online dashboard demo, the committed **`SentinelDashboard/public/extracted_channels.jsonl`** (verification-set merge output) is used — no API or MongoDB required.
-
-**Enable GitHub Pages once:**
-
-1. Open **Settings → Pages** in the repository
-2. Under **Build and deployment → Source**, choose **GitHub Actions**
-3. Push the code; `.github/workflows/pages.yml` builds and publishes automatically
-
-**Live URL:** https://derpzhenjun.github.io/RxSentinel/
-
-**Simulate a Pages build locally:**
-
-```bash
-cd SentinelDashboard
-npm ci
-PAGES_BASE=/RxSentinel/ npm run build    # Linux / macOS
-# Windows PowerShell: $env:PAGES_BASE='/RxSentinel/'; npm run build
-npx serve dist                           # preview dist/
-```
-
-Production builds read `SentinelDashboard/.env.production` (`VITE_USE_JSONL_FIRST=true`). To refresh demo data: re-run the verification merge, overwrite `public/extracted_channels.jsonl`, and push.
-
 <details>
 <summary>📎 <strong>Running MediaCrawler Alone</strong></summary>
 

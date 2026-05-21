@@ -227,30 +227,6 @@ python start.py
 - 若某平台已有 `ai_extracted_channels.jsonl`，将 **跳过 AI** 以节省 API token；需重跑时在「覆盖 AI 分析」中勾选对应平台  
 - 大屏默认请求 Mongo API；若与本地合并文件不一致，请在 `SentinelDashboard/.env` 设置 `VITE_USE_JSONL_FIRST=true` 并重启大屏 dev 服务
 
-### 静态演示部署（GitHub Pages）
-
-在线演示大屏时，使用已提交的 **`SentinelDashboard/public/extracted_channels.jsonl`**（验证集合并产物），无需 API 与 MongoDB。
-
-**首次在 GitHub 开启 Pages（只需一次）：**
-
-1. 打开仓库 **Settings → Pages**
-2. **Build and deployment → Source** 选 **GitHub Actions**
-3. 推送代码后，`.github/workflows/pages.yml` 会自动构建并发布
-
-**访问地址：** https://derpzhenjun.github.io/RxSentinel/
-
-**本地模拟 Pages 构建：**
-
-```bash
-cd SentinelDashboard
-npm ci
-PAGES_BASE=/RxSentinel/ npm run build    # Linux / macOS
-# Windows PowerShell: $env:PAGES_BASE='/RxSentinel/'; npm run build
-npx serve dist                           # 预览 dist/
-```
-
-生产构建读取 `SentinelDashboard/.env.production`（`VITE_USE_JSONL_FIRST=true`）。更新演示数据：重新跑验证集合并后，覆盖 `public/extracted_channels.jsonl` 并 push。
-
 <details>
 <summary>📎 <strong>单独运行 MediaCrawler</strong></summary>
 
