@@ -19,6 +19,7 @@
 MediaCrawler/data/
 ProcessCdata/data/
 SentinelDashboard/public/*.jsonl
+!SentinelDashboard/public/extracted_channels.jsonl
 
 # MediaCrawler 浏览器运行时数据（登录态 cookie、CDP 缓存等）
 MediaCrawler/browser_data/

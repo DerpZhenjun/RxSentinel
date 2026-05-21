@@ -303,7 +303,8 @@ export const useSentinelStore = defineStore('sentinel', () => {
 
   /** `public/extracted_channels.jsonl`：网关不可达或纯离线演示时的兜底 */
   const fetchFromJsonlFallback = async () => {
-    const response = await fetch(`/extracted_channels.jsonl?t=${new Date().getTime()}`);
+    const jsonlUrl = `${import.meta.env.BASE_URL}extracted_channels.jsonl?t=${new Date().getTime()}`;
+    const response = await fetch(jsonlUrl);
     if (!response.ok) {
       fetchError.value = `数据接口不可用(${response.status})`;
       return;
