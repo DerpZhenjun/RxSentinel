@@ -48,7 +48,7 @@ graph LR
 
 ---
 
-## �🔧 技术要点
+## 🔧 技术要点
 
 - **后端**：FastAPI（`RxServer/sentinel_api.py`）、路由在 `RxServer/routers/`，可选用 Token 保护与 slowapi 限流。  
 - **数据入库**：通过 Pydantic 检查字段是否符合约定；链接、平台写法会统一格式化； **`RxServer/sentinel_contract.py`** 负责这一套规则与 **`fingerprint`**。  
@@ -95,48 +95,104 @@ graph LR
 
 ### 前置依赖
 
-- **Python 3.10+**（以本机为准）  
-- **Node.js + npm**（大屏）  
-- **MongoDB**（完整读写链路）  
+| 依赖 | 版本 |
+|------|------|
+| Python | 3.12 |
+| Node.js | 20 |
+| MongoDB | 本地或远程实例，供完整读写链路使用 |
+
+**1. 创建并激活 Conda 环境**
+
+```bash
+conda create -n rxsentinel python=3.12 -y
+conda activate rxsentinel
+```
+
+**2. 安装 Node.js 20**
+
+若本机尚未安装，任选一种方式：
+
+```bash
+conda install -c conda-forge nodejs=20 -y
+```
+
+验证：
+
+```bash
+node --version
+npm --version
+```
+
+`node --version` 应输出 `v20.x.x`。
+
+**3. MongoDB**
+
+安装并启动 MongoDB，连接信息稍后写入根目录 `.env` 中的 `MONGODB_*` 变量。
 
 仅跑爬虫阶段时，请在 **`MediaCrawler/`** 内按 **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** 文档安装浏览器、Playwright 或 CDP 等。
 
-### 安装
+### 安装依赖
+
+激活 Conda 环境后，在项目根目录执行：
 
 ```bash
 pip install -r requirements.txt
-pip install -r MediaCrawler/requirements.txt   # 仅当需要爬虫阶段时
-pip install -r requirements-test.txt         # 仅跑 pytest 时可用轻量依赖，见文件头注释
 ```
 
 ### 配置
 
-1. 根目录：`cp .env.example .env`（Windows：`copy .env.example .env`），填写 **`MONGODB_*`**、`API_SECRET_KEY`（生产务必设置；留空为开发免鉴权）。详见 `.env.example`。  
-2. 大屏：`SentinelDashboard/.env.example` → `SentinelDashboard/.env`，**`VITE_API_BASE_URL`** 与 **`VITE_API_SECRET`** 与后端一致。
+**后端 — 项目根目录**
 
-### 运行（推荐）
+```bash
+cp .env.example .env
+```
+
+Windows CMD：
+
+```cmd
+copy .env.example .env
+```
+
+编辑 `.env`，至少配置：
+
+| 变量 | 说明 |
+|------|------|
+| `MONGODB_URI` | MongoDB 连接地址 |
+| `MONGODB_DB` | 数据库名 |
+| `MONGODB_COLLECTION` | 集合名 |
+| `API_SECRET_KEY` | API 鉴权密钥；生产环境务必设置，留空为开发免鉴权 |
+
+完整说明见 `.env.example`。
+
+**大屏 — `SentinelDashboard/`**
+
+```bash
+cp SentinelDashboard/.env.example SentinelDashboard/.env
+```
+
+Windows CMD：
+
+```cmd
+copy SentinelDashboard\.env.example SentinelDashboard\.env
+```
+
+编辑 `SentinelDashboard/.env`：`VITE_API_BASE_URL` 指向后端地址，`VITE_API_SECRET` 与根目录 `API_SECRET_KEY` 保持一致。
+
+### 运行
+
+在项目根目录执行：
 
 ```bash
 python start.py
 ```
 
-- API：`http://127.0.0.1:8000`  
-- Streamlit：`http://localhost:8501`  
-- 大屏 dev：`http://localhost:5173`  
+启动后可访问：
 
-其它：`python start.py --help`（如 `--api-only`、`--no-frontend`）。
-
-**仅 API**
-
-```bash
-python RxServer/sentinel_api.py --host 127.0.0.1 --port 8000
-```
-
-**仅大屏**（后端需可达）
-
-```bash
-cd SentinelDashboard && npm install && npm run dev
-```
+| 服务 | 地址 |
+|------|------|
+| API | http://127.0.0.1:8000 |
+| Streamlit | http://localhost:8501 |
+| 大屏 | http://localhost:5173 |
 
 通过 `start.py` 拉起 API 时，日志默认写入仓库根目录 **`sentinel_api.log`**。
 

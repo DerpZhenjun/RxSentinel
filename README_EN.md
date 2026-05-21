@@ -94,50 +94,106 @@ graph LR
 
 ### Prerequisites
 
-- **Python 3.10+** (as per local environment)  
-- **Node.js + npm** (dashboard)  
-- **MongoDB** (full read-write chain)  
+| Dependency | Version |
+|------------|---------|
+| Python | 3.12 |
+| Node.js | 20 |
+| MongoDB | Local or remote instance for the full read-write pipeline |
 
-For crawling stage only, install browser, Playwright, or CDP in **`MediaCrawler/`** per **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** documentation.
+**1. Create and activate a Conda environment**
 
-### Installation
+```bash
+conda create -n rxsentinel python=3.12 -y
+conda activate rxsentinel
+```
+
+**2. Install Node.js 20**
+
+If not already installed, use either approach:
+
+```bash
+conda install -c conda-forge nodejs=20 -y
+```
+
+Verify:
+
+```bash
+node --version
+npm --version
+```
+
+`node --version` should print `v20.x.x`.
+
+**3. MongoDB**
+
+Install and start MongoDB; connection details go in the root `.env` under `MONGODB_*`.
+
+For the crawl stage only, install browser, Playwright, or CDP in **`MediaCrawler/`** per **[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)** documentation.
+
+### Install dependencies
+
+With the Conda environment active, from the project root:
 
 ```bash
 pip install -r requirements.txt
-pip install -r MediaCrawler/requirements.txt   # only when crawling stage is needed
-pip install -r requirements-test.txt         # lightweight dependencies for pytest only, see file header
 ```
 
 ### Configuration
 
-1. Root: `cp .env.example .env` (Windows: `copy .env.example .env`), fill **`MONGODB_*`**, `API_SECRET_KEY` (must set in production; empty for dev no-auth). See `.env.example` for details.  
-2. Dashboard: `SentinelDashboard/.env.example` → `SentinelDashboard/.env`, **`VITE_API_BASE_URL`** and **`VITE_API_SECRET`** match backend.
+**Backend — project root**
 
-### Run (Recommended)
+```bash
+cp .env.example .env
+```
+
+Windows CMD:
+
+```cmd
+copy .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+| Variable | Description |
+|----------|-------------|
+| `MONGODB_URI` | MongoDB connection URI |
+| `MONGODB_DB` | Database name |
+| `MONGODB_COLLECTION` | Collection name |
+| `API_SECRET_KEY` | API auth secret; required in production, leave empty for dev no-auth |
+
+See `.env.example` for full details.
+
+**Dashboard — `SentinelDashboard/`**
+
+```bash
+cp SentinelDashboard/.env.example SentinelDashboard/.env
+```
+
+Windows CMD:
+
+```cmd
+copy SentinelDashboard\.env.example SentinelDashboard\.env
+```
+
+Edit `SentinelDashboard/.env`: set `VITE_API_BASE_URL` to the backend URL and `VITE_API_SECRET` to match root `API_SECRET_KEY`.
+
+### Run
+
+From the project root:
 
 ```bash
 python start.py
 ```
 
-- API: `http://127.0.0.1:8000`  
-- Streamlit: `http://localhost:8501`  
-- Dashboard dev: `http://localhost:5173`  
+After startup:
 
-Others: `python start.py --help` (e.g., `--api-only`, `--no-frontend`).
+| Service | URL |
+|---------|-----|
+| API | http://127.0.0.1:8000 |
+| Streamlit | http://localhost:8501 |
+| Dashboard | http://localhost:5173 |
 
-**API Only**
-
-```bash
-python RxServer/sentinel_api.py --host 127.0.0.1 --port 8000
-```
-
-**Dashboard Only** (backend must be reachable)
-
-```bash
-cd SentinelDashboard && npm install && npm run dev
-```
-
-When starting API via `start.py`, logs are written to repo root **`sentinel_api.log`** by default.
+When the API is started via `start.py`, logs are written to **`sentinel_api.log`** at the repo root by default.
 
 <details>
 <summary>📎 <strong>Running MediaCrawler Alone</strong></summary>
