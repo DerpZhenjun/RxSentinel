@@ -67,17 +67,6 @@ graph LR
 
 ---
 
-## 🔧 Technical Highlights
-
-- **Backend**: FastAPI (`RxServer/sentinel_api.py`), routes in `RxServer/routers/`, optional Token protection and slowapi rate limiting.  
-- **Data Ingestion**: Field validation via Pydantic; links and platform names unified formatting; **`RxServer/sentinel_contract.py`** handles these rules and **`fingerprint`**.  
-- **Pipeline**: Optional crawl **`MediaCrawler/`** → `ProcessCdata/data_filter.py` cleaning → `deepseek_processor.py` / `ollama_processor.py` LLM extraction → `RxServer/pipeline_runner.py` merge write to DB or export JSONL.  
-- **Scheduling**: Streamlit (`RxServer/webui.py`) with `webui_core.py` for subprocess spawning.  
-- **Dashboard**: `SentinelDashboard/` (Vite + Vue 3, Pinia, DataV, ECharts); reads offline **JSONL** when API unavailable.  
-- **One-click Local**: Root **`python start.py`** starts API, Streamlit, optional frontend dev simultaneously.
-
----
-
 ## ✨ Capabilities Overview
 
 | Capability Area | Description |

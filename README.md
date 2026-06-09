@@ -67,17 +67,6 @@ graph LR
 
 ---
 
-## 🔧 技术要点
-
-- **后端**：FastAPI（`RxServer/sentinel_api.py`）、路由在 `RxServer/routers/`，可选用 Token 保护与 slowapi 限流。  
-- **数据入库**：通过 Pydantic 检查字段是否符合约定；链接、平台写法会统一格式化； **`RxServer/sentinel_contract.py`** 负责这一套规则与 **`fingerprint`**。  
-- **管线**：可选爬取 **`MediaCrawler/`** → `ProcessCdata/data_filter.py` 清洗 → `deepseek_processor.py` / `ollama_processor.py` 用大模型抽取 → `RxServer/pipeline_runner.py` 合并写库或导出 JSONL。  
-- **调度**：Streamlit（`RxServer/webui.py`）配合 `webui_core.py` 起子进程。  
-- **大屏**：`SentinelDashboard/`（Vite + Vue 3、Pinia、DataV、ECharts）；接口不可用时可读离线 **JSONL**。  
-- **本地一键**：根目录 **`python start.py`** 可同时起 API、Streamlit、可选前端 dev。
-
----
-
 ## ✨ 能力一览
 
 | 能力域 | 说明 |
